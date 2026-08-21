@@ -20,6 +20,13 @@ from pydantic import BaseModel, Field, model_validator
 class TimeConfig(BaseModel):
     water_year_start: int = Field(..., ge=1, le=12)
     seasons: dict[str, list[int]]
+    low_flow_season: str
+
+    @model_validator(mode="after")
+    def _low_flow_season_defined(self) -> "TimeConfig":
+        if self.low_flow_season not in self.seasons:
+            raise ValueError(f"low_flow_season {self.low_flow_season!r} not in seasons")
+        return self
 
 
 class DailyDisaggConfig(BaseModel):
@@ -138,8 +145,20 @@ class PartyConfig(BaseModel):
         return self
 
 
+class DemandConfig(BaseModel):
+    b_irrigation_annual_mcm: float = Field(..., gt=0)
+    b_irrigation_shape: dict[int, float]
+
+    @model_validator(mode="after")
+    def _shape_has_twelve_months(self) -> "DemandConfig":
+        if set(self.b_irrigation_shape.keys()) != set(range(1, 13)):
+            raise ValueError("b_irrigation_shape must have exactly months 1..12")
+        return self
+
+
 class BasinConfig(BaseModel):
     reservoirs: ReservoirsConfig
+    demand: DemandConfig
 
 
 class ScenarioConfig(BaseModel):

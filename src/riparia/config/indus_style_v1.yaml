@@ -15,6 +15,7 @@ time:
   seasons:
     kharif: [4, 5, 6, 7, 8, 9]    # monsoon / high-flow season
     rabi: [10, 11, 12, 1, 2, 3]   # low-flow season
+  low_flow_season: rabi
 
 hydrology:
   mean_annual_flow_mcm: 175000
@@ -68,6 +69,21 @@ basin:
       initial_storage_fraction: 0.5
       live_storage_mcm: 2000
       enabled: true
+  demand:
+    b_irrigation_annual_mcm: 90000
+    b_irrigation_shape:
+      1: 0.070
+      2: 0.060
+      3: 0.070
+      4: 0.090
+      5: 0.110
+      6: 0.120
+      7: 0.090
+      8: 0.070
+      9: 0.070
+      10: 0.090
+      11: 0.090
+      12: 0.070
 
 issues:
   definitions:

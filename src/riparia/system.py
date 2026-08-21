@@ -14,9 +14,10 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 
-from riparia.config_schema import ReservoirConfig, ScenarioConfig
+from riparia.config_schema import AgricultureConfig, ReservoirConfig, ScenarioConfig
+from riparia.economics import CropProfile, agricultural_outcomes, water_requirement_mcm
 from riparia.issues import Issue, Package
-from riparia.reservoir import Reservoir, simulate
+from riparia.reservoir import FloorFn, Reservoir, simulate
 
 # Custom Functions
 
@@ -27,11 +28,14 @@ class BasinOutputs:
 
     Outcome-derived terms (used by payoffs.py, never the package directly):
     firm_hydropower_gwh_per_year, storage_utilization_fraction,
-    irrigation_reliability_fraction, low_season_volume_mcm, shortfall_fraction.
+    irrigation_reliability_fraction, low_season_volume_mcm, shortfall_fraction,
+    a_agricultural_income_musd, a_agricultural_labor_persondays,
+    b_agricultural_income_musd, b_agricultural_labor_persondays.
     """
 
     upstream_release: pd.Series
     upstream_storage: pd.Series
+    a_consumptive_diversion: pd.Series
     tributary_inflow: pd.Series
     inflow_to_b: pd.Series
     delivered_to_b: pd.Series
@@ -42,6 +46,10 @@ class BasinOutputs:
     irrigation_reliability_fraction: float
     low_season_volume_mcm: float
     shortfall_fraction: float
+    a_agricultural_income_musd: float
+    a_agricultural_labor_persondays: float
+    b_agricultural_income_musd: float
+    b_agricultural_labor_persondays: float
 
 
 class FlowModel(Protocol):
@@ -59,8 +67,9 @@ class BasinConfig:
     muskingum_x: float
     upstream_template: ReservoirConfig
     downstream_template: ReservoirConfig
-    b_irrigation_annual_mcm: float
     b_irrigation_shape: dict[int, float]
+    a_consumptive_shape: dict[int, float]
+    agriculture: AgricultureConfig
     low_flow_months: list[int]
     issues_by_name: dict[str, Issue] = field(default_factory=dict)
 
@@ -72,11 +81,58 @@ class BasinConfig:
             muskingum_x=cfg.hydrology.muskingum_x,
             upstream_template=cfg.basin.reservoirs.upstream,
             downstream_template=cfg.basin.reservoirs.downstream,
-            b_irrigation_annual_mcm=cfg.basin.demand.b_irrigation_annual_mcm,
             b_irrigation_shape=cfg.basin.demand.b_irrigation_shape,
+            a_consumptive_shape=cfg.basin.demand.a_consumptive_shape,
+            agriculture=cfg.basin.agriculture,
             low_flow_months=cfg.time.seasons[cfg.time.low_flow_season],
             issues_by_name={issue.name: issue for issue in issues},
         )
+
+
+def _crop_profile(cfg) -> CropProfile:
+    return CropProfile(
+        label=cfg.label,
+        water_use_mcm_per_1000ha=cfg.water_use_mcm_per_1000ha,
+        income_musd_per_1000ha=cfg.income_musd_per_1000ha,
+        labor_persondays_per_1000ha=cfg.labor_persondays_per_1000ha,
+    )
+
+
+def _make_floor_fn(mechanism_params: dict, live_storage: float, fill_fraction: float) -> FloorFn:
+    """Build the per-step release-floor function for the package's
+    `allocation_mechanism` issue level. See docs/METHODOLOGY.md, "The
+    allocation-mechanism issue", for what each mechanism represents."""
+    mechanism = mechanism_params["mechanism"]
+    effective_capacity = fill_fraction * live_storage
+
+    if mechanism == "fixed_volume":
+        floor = float(mechanism_params["min_release_mcm_per_month"])
+        return lambda inflow_i, storage_start, m: floor
+
+    if mechanism == "percentage_of_flow":
+        share = float(mechanism_params["release_share"])
+        return lambda inflow_i, storage_start, m: share * inflow_i
+
+    if mechanism == "zonal_formula":
+        threshold = float(mechanism_params["threshold_mcm_per_month"])
+        b_share = float(mechanism_params["surplus_share_to_b"])
+        return lambda inflow_i, storage_start, m: min(inflow_i, threshold) + b_share * max(0.0, inflow_i - threshold)
+
+    if mechanism == "adaptive_rule_curve":
+        base_floor = float(mechanism_params["base_min_release_mcm_per_month"])
+        sensitivity = float(mechanism_params["sensitivity"])
+        target_fraction = {int(k): float(v) for k, v in mechanism_params["target_storage_fraction"].items()}
+
+        def floor_fn(inflow_i: float, storage_start: float, m: int) -> float:
+            if effective_capacity <= 0:
+                return base_floor
+            frac = storage_start / effective_capacity
+            extra = sensitivity * max(0.0, frac - target_fraction[m]) * effective_capacity
+            return base_floor + extra
+
+        return floor_fn
+
+    raise ValueError(f"unknown allocation mechanism {mechanism!r}")
 
 
 def route_muskingum(inflow: pd.Series, travel_time_days: float, x: float, days_per_step: float = 30.0) -> pd.Series:
@@ -137,13 +193,13 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
     fill_months = [int(m) for m in window_params["months"]]
     release_months = [m for m in range(1, 13) if m not in fill_months]
 
-    release_params = package.level_params(config.issues_by_name, "min_release_guarantee")
-    min_release = float(release_params["min_release_mcm_per_month"])
+    mechanism_params = package.level_params(config.issues_by_name, "allocation_mechanism")
+    floor_fn = _make_floor_fn(mechanism_params, live_storage, config.upstream_template.fill_fraction)
 
     upstream = Reservoir(
         name=config.upstream_template.name,
         live_storage=live_storage,
-        min_release=min_release,
+        min_release=floor_fn,
         fill_months=fill_months if live_storage > 0 else config.upstream_template.fill_months,
         release_months=release_months if live_storage > 0 else config.upstream_template.release_months,
         fill_fraction=config.upstream_template.fill_fraction,
@@ -152,8 +208,18 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
     )
     upstream_result = simulate(upstream, flow_trace)
 
+    a_agri_cfg = config.agriculture.parties["A"]
+    high_crop = _crop_profile(config.agriculture.high_water_crop)
+    low_crop = _crop_profile(config.agriculture.low_water_crop)
+    a_annual_demand = water_requirement_mcm(
+        a_agri_cfg.default_crop_mix_fraction, a_agri_cfg.command_area_1000ha, high_crop, low_crop
+    )
+    a_demand_target = _demand_target_series(config.a_consumptive_shape, a_annual_demand, upstream_result.release.index)
+    a_consumptive_diversion = np.minimum(upstream_result.release, a_demand_target)
+    net_release = upstream_result.release - a_consumptive_diversion
+
     tributary_inflow = flow_trace * config.tributary_inflow_fraction
-    routed_release = route_muskingum(upstream_result.release, config.travel_time_days, config.muskingum_x)
+    routed_release = route_muskingum(net_release, config.travel_time_days, config.muskingum_x)
     inflow_to_b = routed_release + tributary_inflow
 
     b_storage = None
@@ -175,7 +241,11 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
     else:
         delivered_to_b = inflow_to_b
 
-    demand_target = _demand_target_series(config.b_irrigation_shape, config.b_irrigation_annual_mcm, delivered_to_b.index)
+    b_agri_cfg = config.agriculture.parties["B"]
+    b_annual_demand = water_requirement_mcm(
+        b_agri_cfg.default_crop_mix_fraction, b_agri_cfg.command_area_1000ha, high_crop, low_crop
+    )
+    demand_target = _demand_target_series(config.b_irrigation_shape, b_annual_demand, delivered_to_b.index)
     reliability_ratio = np.minimum(1.0, delivered_to_b / demand_target)
     shortfall_ratio = np.maximum(0.0, (demand_target - delivered_to_b) / demand_target)
     irrigation_reliability_fraction = float(reliability_ratio.mean())
@@ -196,9 +266,25 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
         firm_hydropower_gwh_per_year = 0.0
         storage_utilization_fraction = 0.0
 
+    a_ag_outcome = agricultural_outcomes(
+        water_available_mcm=float(a_consumptive_diversion.sum() / n_years) if n_years > 0 else 0.0,
+        crop_mix_fraction=a_agri_cfg.default_crop_mix_fraction,
+        command_area_1000ha=a_agri_cfg.command_area_1000ha,
+        high_water_crop=high_crop,
+        low_water_crop=low_crop,
+    )
+    b_ag_outcome = agricultural_outcomes(
+        water_available_mcm=float(delivered_to_b.sum() / n_years) if n_years > 0 else 0.0,
+        crop_mix_fraction=b_agri_cfg.default_crop_mix_fraction,
+        command_area_1000ha=b_agri_cfg.command_area_1000ha,
+        high_water_crop=high_crop,
+        low_water_crop=low_crop,
+    )
+
     return BasinOutputs(
         upstream_release=upstream_result.release,
         upstream_storage=upstream_result.storage,
+        a_consumptive_diversion=a_consumptive_diversion,
         tributary_inflow=tributary_inflow,
         inflow_to_b=inflow_to_b,
         delivered_to_b=delivered_to_b,
@@ -208,4 +294,8 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
         irrigation_reliability_fraction=irrigation_reliability_fraction,
         low_season_volume_mcm=low_season_volume_mcm,
         shortfall_fraction=shortfall_fraction,
+        a_agricultural_income_musd=a_ag_outcome.income_musd,
+        a_agricultural_labor_persondays=a_ag_outcome.labor_persondays,
+        b_agricultural_income_musd=b_ag_outcome.income_musd,
+        b_agricultural_labor_persondays=b_ag_outcome.labor_persondays,
     )

@@ -92,6 +92,24 @@ def test_reservoir_converges_to_repeating_cycle_after_spin_up():
     assert np.allclose(year1, year2, atol=1.0)
 
 
+def test_reservoir_accepts_callable_floor_percentage_of_flow():
+    reservoir = Reservoir(
+        name="test",
+        live_storage=8000,
+        min_release=lambda inflow_i, storage_pre, m: 0.3 * inflow_i,
+        fill_months=[7, 8],
+        release_months=[1, 2, 3, 4, 5, 6, 9, 10, 11, 12],
+        fill_fraction=0.9,
+        initial_storage=2000,
+        spin_up_years=3,
+    )
+    inflow = _monthly_inflow(n_years=4)
+    result = simulate(reservoir, inflow, timestep_months=1)
+    balance = result.storage_start + inflow.sum() - result.release.sum()
+    assert balance == pytest.approx(result.storage.iloc[-1], abs=1e-6)
+    assert (result.release >= 0.3 * inflow - 1e-6).all()
+
+
 def test_zero_capacity_reservoir_passes_inflow_through():
     reservoir = Reservoir(
         name="test",

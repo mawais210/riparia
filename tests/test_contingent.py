@@ -26,13 +26,13 @@ def _fixture(n_years: int = 15):
         selections={
             "upstream_storage_capacity": "medium",
             "filling_window": "shoulder",
-            "min_release_guarantee": "low",
+            "allocation_mechanism": "fixed_low",
             "data_exchange": "monthly",
             "flood_early_warning": "seasonal",
             "financing_transfer": "none",
         }
     )
-    high_release = Package(selections={**low_release.selections, "min_release_guarantee": "high"})
+    high_release = Package(selections={**low_release.selections, "allocation_mechanism": "fixed_high"})
 
     rule = ContingentRule(
         name="contingent",

@@ -9,11 +9,26 @@ monthly steps, so MCM/month). All quantities are volumes, never rates.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable, Union
 
 import numpy as np
 import pandas as pd
 
 # Custom Functions
+
+FloorFn = Callable[[float, float, int], float]
+"""Release-floor function: (inflow_this_step, storage_at_start_of_step, month) -> floor MCM.
+
+`storage_at_start_of_step` is the end-of-previous-step storage, i.e. before
+this step's inflow is added.
+
+Called once per simulated step (including spin-up). Lets the caller express
+release rules that depend on the step's own inflow (e.g. a percentage-of-flow
+share) or on the reservoir's own storage trajectory (e.g. a rule curve),
+not just a flat MCM/step floor. system.py builds these from a package's
+`allocation_mechanism` issue; reservoir.py stays agnostic to what a
+"mechanism" is.
+"""
 
 
 @dataclass
@@ -23,7 +38,10 @@ class Reservoir:
     Attributes:
         name: label.
         live_storage: nominal live storage capacity, MCM.
-        min_release: floor release enforced in every step, MCM/step.
+        min_release: floor release enforced in every step, MCM/step. Either
+            a flat number, or a FloorFn computing the floor per step from
+            that step's inflow, the storage available before release, and
+            the calendar month.
         fill_months: calendar months (1-12) in which the reservoir retains
             inflow above `min_release` rather than actively drawing down.
         release_months: calendar months (1-12) in which the reservoir draws
@@ -42,7 +60,7 @@ class Reservoir:
 
     name: str
     live_storage: float
-    min_release: float
+    min_release: Union[float, FloorFn]
     fill_months: list[int]
     release_months: list[int]
     fill_fraction: float
@@ -100,6 +118,13 @@ def simulate(reservoir: Reservoir, inflow: pd.Series, timestep_months: int = 1) 
     fill_set = set(reservoir.fill_months)
     effective_capacity = reservoir.fill_fraction * reservoir.live_storage
 
+    floor_fn: FloorFn
+    if callable(reservoir.min_release):
+        floor_fn = reservoir.min_release
+    else:
+        flat_floor = float(reservoir.min_release)
+        floor_fn = lambda inflow_i, storage_pre, m: flat_floor  # noqa: E731
+
     spin_up_steps = reservoir.spin_up_years * 12
     if spin_up_steps > 0:
         first_year_inflow = inflow.iloc[:12].values
@@ -121,12 +146,13 @@ def simulate(reservoir: Reservoir, inflow: pd.Series, timestep_months: int = 1) 
     for i in range(n):
         m = int(all_months[i])
         storage_pre = storage_prev + all_inflow[i]
+        floor_i = floor_fn(float(all_inflow[i]), storage_prev, m)
         if m in fill_set:
-            release_i = reservoir.min_release
+            release_i = floor_i
         else:
             remaining = remaining_lookup[m]
-            release_i = reservoir.min_release + max(0.0, storage_pre - reservoir.min_release) / remaining
-            release_i = max(release_i, reservoir.min_release)
+            release_i = floor_i + max(0.0, storage_pre - floor_i) / remaining
+            release_i = max(release_i, floor_i)
 
         release_i = min(release_i, storage_pre)
         storage_i = storage_pre - release_i

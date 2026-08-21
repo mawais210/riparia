@@ -39,7 +39,7 @@ def test_run_basin_large_storage_package():
         selections={
             "upstream_storage_capacity": "large",
             "filling_window": "wet_season",
-            "min_release_guarantee": "high",
+            "allocation_mechanism": "fixed_high",
             "data_exchange": "daily_verified",
             "flood_early_warning": "real_time",
             "financing_transfer": "none",
@@ -59,7 +59,7 @@ def test_run_basin_no_storage_package_has_zero_hydropower():
         selections={
             "upstream_storage_capacity": "none",
             "filling_window": "wet_season",
-            "min_release_guarantee": "none",
+            "allocation_mechanism": "fixed_low",
             "data_exchange": "none",
             "flood_early_warning": "none",
             "financing_transfer": "none",
@@ -76,7 +76,7 @@ def test_run_basin_more_storage_increases_reliability_or_hydropower():
         selections={
             "upstream_storage_capacity": "small",
             "filling_window": "wet_season",
-            "min_release_guarantee": "moderate",
+            "allocation_mechanism": "zonal_formula",
             "data_exchange": "none",
             "flood_early_warning": "none",
             "financing_transfer": "none",
@@ -86,3 +86,63 @@ def test_run_basin_more_storage_increases_reliability_or_hydropower():
     out_small = run_basin(basin_config, small, trace)
     out_large = run_basin(basin_config, large, trace)
     assert out_large.firm_hydropower_gwh_per_year > out_small.firm_hydropower_gwh_per_year
+
+
+def test_run_basin_fixed_high_raises_worst_month_release_floor():
+    # Under the FULL climatology, monsoon inflow vastly exceeds medium
+    # storage capacity, so fill months spill regardless of the floor and it
+    # never actually binds anywhere -- fixed_low(300) and fixed_high(1200)
+    # produce identical results. Real floors only bind (and differentiate
+    # release) under genuine scarcity, so this scales the trace down to a
+    # dry-year-like level where the floor becomes the binding constraint;
+    # see test_contingent.py for the full multi-year stress test.
+    basin_config, trace, issues = _basin_config_and_trace()
+    dry_trace = trace * 0.2
+    base = {
+        "upstream_storage_capacity": "medium",
+        "filling_window": "shoulder",
+        "data_exchange": "none",
+        "flood_early_warning": "none",
+        "financing_transfer": "none",
+    }
+    weak = Package(selections={**base, "allocation_mechanism": "fixed_low"})
+    strong = Package(selections={**base, "allocation_mechanism": "fixed_high"})
+    out_weak = run_basin(basin_config, weak, dry_trace)
+    out_strong = run_basin(basin_config, strong, dry_trace)
+    assert out_strong.upstream_release.min() > out_weak.upstream_release.min()
+    assert out_strong.upstream_release.min() == pytest.approx(1200, abs=1.0)
+    assert out_weak.upstream_release.min() == pytest.approx(300, abs=1.0)
+
+
+def test_run_basin_percentage_of_flow_scales_with_inflow():
+    basin_config, trace, issues = _basin_config_and_trace()
+    package = Package(
+        selections={
+            "upstream_storage_capacity": "medium",
+            "filling_window": "shoulder",
+            "allocation_mechanism": "percentage_of_flow",
+            "data_exchange": "none",
+            "flood_early_warning": "none",
+            "financing_transfer": "none",
+        }
+    )
+    outcomes = run_basin(basin_config, package, trace)
+    assert outcomes.upstream_release.min() >= 0.30 * trace.min() - 1e-6
+
+
+def test_run_basin_a_consumptive_diversion_reduces_delivery_to_b():
+    basin_config, trace, issues = _basin_config_and_trace()
+    package = Package(
+        selections={
+            "upstream_storage_capacity": "medium",
+            "filling_window": "shoulder",
+            "allocation_mechanism": "fixed_low",
+            "data_exchange": "none",
+            "flood_early_warning": "none",
+            "financing_transfer": "none",
+        }
+    )
+    outcomes = run_basin(basin_config, package, trace)
+    assert (outcomes.a_consumptive_diversion >= -1e-6).all()
+    assert outcomes.a_agricultural_income_musd > 0
+    assert outcomes.b_agricultural_income_musd > 0

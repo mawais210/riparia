@@ -9,7 +9,7 @@ values are in millions of US dollars (MUSD) per year. Months are 1-12
 # Import necessary libraries
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -88,7 +88,7 @@ class ReservoirsConfig(BaseModel):
 
 class IssueLevelConfig(BaseModel):
     label: str
-    params: dict[str, float | int | list[int] | str] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class IssueConfig(BaseModel):
@@ -146,19 +146,44 @@ class PartyConfig(BaseModel):
 
 
 class DemandConfig(BaseModel):
-    b_irrigation_annual_mcm: float = Field(..., gt=0)
+    """Monthly shape only -- annual totals are derived from `agriculture`
+    (command area x crop-mix-blended water use), not configured separately,
+    so a party's irrigation/consumptive demand target always matches the
+    same crop economics used to score its agricultural outcome terms."""
+
     b_irrigation_shape: dict[int, float]
+    a_consumptive_shape: dict[int, float]
 
     @model_validator(mode="after")
-    def _shape_has_twelve_months(self) -> "DemandConfig":
-        if set(self.b_irrigation_shape.keys()) != set(range(1, 13)):
-            raise ValueError("b_irrigation_shape must have exactly months 1..12")
+    def _shapes_have_twelve_months(self) -> "DemandConfig":
+        for name in ("b_irrigation_shape", "a_consumptive_shape"):
+            if set(getattr(self, name).keys()) != set(range(1, 13)):
+                raise ValueError(f"{name} must have exactly months 1..12")
         return self
+
+
+class CropProfileConfig(BaseModel):
+    label: str
+    water_use_mcm_per_1000ha: float = Field(..., gt=0)
+    income_musd_per_1000ha: float = Field(..., ge=0)
+    labor_persondays_per_1000ha: float = Field(..., ge=0)
+
+
+class PartyAgricultureConfig(BaseModel):
+    command_area_1000ha: float = Field(..., gt=0)
+    default_crop_mix_fraction: float = Field(..., ge=0, le=1)
+
+
+class AgricultureConfig(BaseModel):
+    high_water_crop: CropProfileConfig
+    low_water_crop: CropProfileConfig
+    parties: dict[Literal["A", "B"], PartyAgricultureConfig]
 
 
 class BasinConfig(BaseModel):
     reservoirs: ReservoirsConfig
     demand: DemandConfig
+    agriculture: AgricultureConfig
 
 
 class ScenarioConfig(BaseModel):

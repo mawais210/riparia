@@ -1,0 +1,218 @@
+# Default scenario: an Indus-style two-party river basin.
+# Country A = upstream riparian, Country B = downstream riparian.
+# Units: volumes in MCM (million cubic metres), monthly flows in MCM/month,
+# money in MUSD/year. See src/riparia/config_schema.py for field semantics.
+
+name: "Indus-style v1"
+description: >
+  Stylised two-party transboundary basin loosely patterned on the Indus system:
+  a large snow/monsoon-fed river, an upstream storage-and-hydropower riparian,
+  and a downstream irrigation-dependent riparian. Not a calibrated hydrological
+  model of any real basin — see LIMITATIONS.md.
+
+time:
+  water_year_start: 4  # April
+  seasons:
+    kharif: [4, 5, 6, 7, 8, 9]    # monsoon / high-flow season
+    rabi: [10, 11, 12, 1, 2, 3]   # low-flow season
+
+hydrology:
+  mean_annual_flow_mcm: 175000
+  seasonal_shape:
+    1: 0.030
+    2: 0.028
+    3: 0.035
+    4: 0.055
+    5: 0.075
+    6: 0.110
+    7: 0.170
+    8: 0.180
+    9: 0.130
+    10: 0.075
+    11: 0.045
+    12: 0.033
+  tributary_inflow_fraction: 0.15
+  travel_time_days: 2.0
+  muskingum_x: 0.2
+  daily_disagg:
+    cv_low: 0.10
+    cv_high: 0.35
+    phi: 0.6
+  ensemble:
+    n_years: 30
+    drought_prob: 0.2
+    wet_prob: 0.2
+    seed: 42
+    dry_scale: 0.70
+    wet_scale: 1.30
+
+basin:
+  reservoirs:
+    upstream:
+      name: "Country A Dam"
+      fill_months: [7, 8]
+      release_months: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12]
+      fill_fraction: 0.90
+      min_release_mcm_per_month: 0
+      spin_up_years: 5
+      initial_storage_fraction: 0.5
+      live_storage_mcm: null
+      enabled: true
+    downstream:
+      name: "Country B Barrage"
+      fill_months: [7, 8, 9]
+      release_months: [1, 2, 3, 4, 5, 6, 10, 11, 12]
+      fill_fraction: 0.85
+      min_release_mcm_per_month: 100
+      spin_up_years: 3
+      initial_storage_fraction: 0.5
+      live_storage_mcm: 2000
+      enabled: true
+
+issues:
+  definitions:
+    - name: upstream_storage_capacity
+      description: "Live storage capacity of Country A's upstream reservoir"
+      levels:
+        - label: none
+          params: {live_storage_mcm: 0}
+        - label: small
+          params: {live_storage_mcm: 3000}
+        - label: medium
+          params: {live_storage_mcm: 8000}
+        - label: large
+          params: {live_storage_mcm: 15000}
+
+    - name: filling_window
+      description: "Months during which Country A may fill its reservoir"
+      levels:
+        - label: wet_season
+          params: {months: [7, 8]}
+        - label: shoulder
+          params: {months: [6, 7, 8, 9]}
+        - label: low_season
+          params: {months: [4, 5, 6, 7, 8, 9, 10]}
+        - label: unrestricted
+          params: {months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
+
+    - name: min_release_guarantee
+      description: "Minimum guaranteed release from Country A's reservoir, MCM/month"
+      levels:
+        - label: none
+          params: {min_release_mcm_per_month: 0}
+        - label: low
+          params: {min_release_mcm_per_month: 300}
+        - label: moderate
+          params: {min_release_mcm_per_month: 700}
+        - label: high
+          params: {min_release_mcm_per_month: 1200}
+
+    - name: data_exchange
+      description: "Hydrological data exchange regime"
+      levels:
+        - label: none
+          params: {tier: 0}
+        - label: monthly
+          params: {tier: 1}
+        - label: weekly
+          params: {tier: 2}
+        - label: daily_verified
+          params: {tier: 3}
+
+    - name: flood_early_warning
+      description: "Flood early-warning cooperation"
+      levels:
+        - label: none
+          params: {tier: 0}
+        - label: seasonal
+          params: {tier: 1}
+        - label: real_time
+          params: {tier: 2}
+
+    - name: financing_transfer
+      description: "Annual financing transfer between parties, MUSD/year (positive = B pays A)"
+      levels:
+        - label: b_pays_a
+          params: {transfer_musd_per_year: 50}
+        - label: none
+          params: {transfer_musd_per_year: 0}
+        - label: a_pays_b
+          params: {transfer_musd_per_year: -50}
+        - label: joint_fund
+          params: {transfer_musd_per_year: 20}
+
+  # A package is infeasible if it matches ALL key/value pairs of any entry below.
+  forbidden_combinations:
+    - upstream_storage_capacity: none
+      filling_window: shoulder
+    - upstream_storage_capacity: none
+      filling_window: low_season
+    - upstream_storage_capacity: none
+      filling_window: unrestricted
+    - upstream_storage_capacity: small
+      filling_window: unrestricted
+
+parties:
+  A:
+    name: "Upstream Riparian (Country A)"
+    batna: 45.0
+    weights:
+      upstream_storage_capacity: 0.18
+      filling_window: 0.12
+      min_release_guarantee: 0.05
+      data_exchange: 0.05
+      flood_early_warning: 0.05
+      financing_transfer: 0.10
+      firm_hydropower: 0.30
+      storage_utilization: 0.15
+    issue_scores:
+      upstream_storage_capacity: {none: 5, small: 45, medium: 75, large: 100}
+      filling_window: {wet_season: 35, shoulder: 60, low_season: 85, unrestricted: 100}
+      min_release_guarantee: {none: 100, low: 78, moderate: 50, high: 20}
+      data_exchange: {none: 100, monthly: 88, weekly: 72, daily_verified: 50}
+      flood_early_warning: {none: 100, seasonal: 82, real_time: 60}
+      financing_transfer: {b_pays_a: 100, none: 55, a_pays_b: 5, joint_fund: 68}
+    outcome_terms:
+      firm_hydropower:
+        source: firm_hydropower_gwh_per_year
+        norm_min: 0
+        norm_max: 9000
+      storage_utilization:
+        source: storage_utilization_fraction
+        norm_min: 0
+        norm_max: 1
+
+  B:
+    name: "Downstream Riparian (Country B)"
+    batna: 45.0
+    weights:
+      upstream_storage_capacity: 0.05
+      filling_window: 0.10
+      min_release_guarantee: 0.13
+      data_exchange: 0.08
+      flood_early_warning: 0.09
+      financing_transfer: 0.10
+      irrigation_reliability: 0.25
+      low_season_volume: 0.12
+      shortfall_penalty: 0.08
+    issue_scores:
+      upstream_storage_capacity: {none: 100, small: 68, medium: 38, large: 8}
+      filling_window: {wet_season: 100, shoulder: 68, low_season: 35, unrestricted: 10}
+      min_release_guarantee: {none: 5, low: 38, moderate: 75, high: 100}
+      data_exchange: {none: 8, monthly: 55, weekly: 80, daily_verified: 100}
+      flood_early_warning: {none: 8, seasonal: 58, real_time: 100}
+      financing_transfer: {b_pays_a: 8, none: 55, a_pays_b: 100, joint_fund: 75}
+    outcome_terms:
+      irrigation_reliability:
+        source: irrigation_reliability_fraction
+        norm_min: 0
+        norm_max: 1
+      low_season_volume:
+        source: low_season_volume_mcm
+        norm_min: 0
+        norm_max: 24000
+      shortfall_penalty:
+        source: shortfall_fraction
+        norm_min: 0
+        norm_max: 1
+        invert: true

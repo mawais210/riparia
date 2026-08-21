@@ -192,7 +192,7 @@ parties:
       firm_hydropower:
         source: firm_hydropower_gwh_per_year
         norm_min: 0
-        norm_max: 9000
+        norm_max: 700
       storage_utilization:
         source: storage_utilization_fraction
         norm_min: 0
@@ -226,7 +226,7 @@ parties:
       low_season_volume:
         source: low_season_volume_mcm
         norm_min: 0
-        norm_max: 24000
+        norm_max: 55000
       shortfall_penalty:
         source: shortfall_fraction
         norm_min: 0

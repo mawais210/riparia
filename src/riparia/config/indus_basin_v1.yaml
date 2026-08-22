@@ -73,6 +73,94 @@ default_party_names:
   A: "India"
   B: "Pakistan"
 
+# Real historical disputes, loadable in the app's Negotiate tab as opening
+# positions. The pedagogical question: using this tool's ZOPA/frontier
+# apparatus, can the two starting positions below reach a NEGOTIATED
+# settlement -- when, historically, both disputes were instead resolved by
+# third-party adjudication under the treaty (a Neutral Expert or a Court of
+# Arbitration), not direct bilateral agreement?
+#
+# The mapping onto this tool's 6 issues is a simplification: the real
+# disputes concerned specific engineering parameters (freeboard, spillway
+# gate elevation, pondage volume, minimum environmental flow) that aren't
+# individually modeled here. `summary` and `historical_outcome` name their
+# sources; treat the opening positions as an analogy, not a reconstruction.
+case_studies:
+  - name: "Baglihar Dam (Chenab River, 2005-2007)"
+    summary: >
+      India began building the Baglihar hydroelectric plant (a run-of-river
+      project on the Chenab, one of the Western Rivers reserved mainly for
+      Pakistan's use) in 1999-2000. Pakistan objected to specific design
+      elements -- pondage (live storage) volume, spillway gate placement,
+      and freeboard -- arguing they gave India more control over the river's
+      flow and timing than the treaty permits for a run-of-river plant.
+      Pakistan requested a Neutral Expert in 2005 under the treaty's Article
+      IX (World Bank, "Fact Sheet: The Indus Waters Treaty 1960 and the
+      World Bank"; Salman, "The Baglihar Difference and its Resolution
+      Process," International Water Law bibliography).
+    party_a_opening:
+      upstream_storage_capacity: large
+      filling_window: unrestricted
+      allocation_mechanism: adaptive_rule_curve
+      data_exchange: monthly
+      flood_early_warning: seasonal
+      financing_transfer: none
+    party_b_opening:
+      upstream_storage_capacity: small
+      filling_window: wet_season
+      allocation_mechanism: fixed_high
+      data_exchange: daily_verified
+      flood_early_warning: real_time
+      financing_transfer: none
+    historical_outcome: >
+      Neutral Expert Prof. Raymond Lafitte delivered his final decision in
+      Bern on 12 February 2007, about a year and a half after his
+      appointment. He required India to reduce pondage and lower the
+      spillway gates, but upheld the project's overall design as treaty-
+      compliant; press coverage at the time described both sides as
+      claiming partial vindication (Dawn, "2007: Neutral expert gives his
+      judgement on Baglihar Dam," reporting archive). This was adjudication
+      under the treaty's technical "Neutral Expert" track, not a
+      negotiated bilateral settlement.
+
+  - name: "Kishenganga Hydroelectric Project (Jhelum tributary, 2010-2013)"
+    summary: >
+      India proposed a 330 MW run-of-river hydroelectric project on the
+      Kishenganga (called the Neelum in Pakistan), diverting water through
+      a tunnel before returning it to the same river system. Pakistan
+      argued the diversion would harm its own downstream Neelum-Jhelum
+      hydropower project and reduce environmental flow, and in 2010
+      requested arbitration under the treaty -- the first use of the
+      treaty's Court of Arbitration track, as opposed to the Neutral
+      Expert track used for Baglihar (Permanent Court of Arbitration case
+      record, hosted at jusmundi.com; American Society of International
+      Law, "The Indus Waters Kishenganga Arbitration (Pakistan v. India),"
+      ASIL Insights).
+    party_a_opening:
+      upstream_storage_capacity: none
+      filling_window: wet_season
+      allocation_mechanism: fixed_low
+      data_exchange: monthly
+      flood_early_warning: none
+      financing_transfer: none
+    party_b_opening:
+      upstream_storage_capacity: none
+      filling_window: wet_season
+      allocation_mechanism: fixed_high
+      data_exchange: daily_verified
+      flood_early_warning: real_time
+      financing_transfer: none
+    historical_outcome: >
+      The seven-member Court of Arbitration (Permanent Court of
+      Arbitration, The Hague) issued a Partial Award on 18 February 2013,
+      ruling that Kishenganga qualifies as a permissible "Run-of-River
+      Plant" under the treaty -- so India could proceed with the diversion
+      -- but that India must release a minimum downstream flow. The exact
+      minimum-flow volume was set in a Final Award on 20 December 2013
+      (Permanent Court of Arbitration case record; ASIL Insights, cited
+      above). Again, adjudication under the treaty's dispute-resolution
+      mechanism, not a bilaterally negotiated settlement.
+
 time:
   water_year_start: 4  # April
   seasons:

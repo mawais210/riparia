@@ -199,6 +199,21 @@ class BasinConfig(BaseModel):
     agriculture: AgricultureConfig
 
 
+class CaseStudyConfig(BaseModel):
+    """A well-cited historical dispute, loadable as opening positions in the
+    Negotiate tab: "could these real positions have been resolved by
+    bilateral negotiation, using this tool's ZOPA/frontier apparatus,
+    instead of the third-party adjudication that actually happened?" See
+    docs/METHODOLOGY.md for citation discipline; `summary`/`historical_outcome`
+    must name their sources inline (organisation + year), not just assert facts."""
+
+    name: str
+    summary: str
+    party_a_opening: dict[str, str]
+    party_b_opening: dict[str, str]
+    historical_outcome: str
+
+
 class ScenarioConfig(BaseModel):
     name: str
     description: str = ""
@@ -210,6 +225,9 @@ class ScenarioConfig(BaseModel):
     """Optional suggested display names (e.g. real country names) seeded
     into the facilitator app's party-name inputs. None keeps the generic
     "Country A" / "Country B" defaults."""
+    case_studies: list[CaseStudyConfig] = Field(default_factory=list)
+    """Optional well-cited historical disputes, loadable as opening
+    negotiating positions -- see CaseStudyConfig."""
     time: TimeConfig
     hydrology: HydrologyConfig
     basin: BasinConfig

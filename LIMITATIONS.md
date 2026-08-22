@@ -88,6 +88,22 @@ routing, the negotiation-analytic framework). This file is about what's
   package also selects, so it does not perfectly track an arbitrarily
   chosen fill season — an approximation, not a bug.
 
+## Historical case studies
+
+- `indus_basin_v1.yaml`'s `case_studies` (Baglihar, Kishenganga) map each
+  real dispute's positions onto this tool's 6 issues as an analogy, not a
+  reconstruction. The real disputes turned on specific engineering
+  parameters — freeboard, spillway gate elevation, pondage volume, minimum
+  environmental flow — that aren't individually modeled; `upstream_storage_capacity`
+  and `allocation_mechanism` stand in for those in a way that preserves the
+  general shape of each disagreement, not its technical substance.
+- Both case studies were in fact resolved by treaty-mandated third-party
+  adjudication (a Neutral Expert for Baglihar, a Court of Arbitration for
+  Kishenganga), not bilateral negotiation. This tool cannot simulate that
+  adjudication process — it can only show whether the same starting
+  positions admit a negotiated ZOPA/frontier solution, which is a
+  different question from what an adjudicator would have ruled.
+
 ## Negotiation-analytic layer
 
 - Value functions are **assigned from configuration** (PON-style), not

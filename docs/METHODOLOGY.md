@@ -298,6 +298,27 @@ app's Brief tab renders. Its hydrology and economics numbers are still the
 same illustrative model as the generic scenario, not sourced from real
 Indus data.
 
+### Historical case studies
+
+`indus_basin_v1.yaml` also defines `case_studies`: real, cited disputes
+(the 2005-2007 Baglihar Dam difference, resolved by a Neutral Expert; the
+2010-2013 Kishenganga arbitration, resolved by a Court of Arbitration) that
+the Negotiate tab can load as opening positions for both parties. Each
+entry's `summary` and `historical_outcome` name their sources (World Bank,
+the Permanent Court of Arbitration's case record, the American Society of
+International Law) rather than asserting facts unsourced.
+
+The pedagogical point: both real disputes were resolved by third-party
+*adjudication* under the treaty, not by the two countries reaching a
+bilateral negotiated agreement. Loading a case study asks the same
+question this tool asks of every exercise -- can the parties find the
+ZOPA and settle -- against positions that, historically, adjudication
+had to resolve instead. The mapping onto this tool's 6 issues is a
+simplification: the real disputes turned on specific engineering
+parameters (freeboard, spillway gate elevation, pondage volume, minimum
+environmental flow) that aren't individually modeled here. See
+LIMITATIONS.md.
+
 The facilitator app's sidebar lists every validated YAML file in
 `src/riparia/config/`, so adding a Nile-style or Central-Asian scenario
 means authoring a new scenario file (issues, value functions, hydrology,

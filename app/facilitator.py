@@ -248,16 +248,39 @@ def render_negotiate(ex: Exercise, names: dict[str, str]) -> None:
     st.markdown(f"**Round {ex.current_round.number}** &nbsp;&nbsp; phase: `{ex.current_round.phase.value}`")
     batnas = ex.batnas()
 
+    case_study_defaults_a: dict[str, str] | None = None
+    case_study_defaults_b: dict[str, str] | None = None
+    cs_key_suffix = "nocs"
+    if ex.config.case_studies:
+        st.markdown("##### Load a historical case study as opening positions")
+        case_study_names = ["(none)"] + [cs.name for cs in ex.config.case_studies]
+        chosen_name = st.selectbox("Case study", case_study_names, key="case_study_select")
+        st.session_state["active_case_study"] = chosen_name if chosen_name != "(none)" else None
+        cs_key_suffix = chosen_name
+        if chosen_name != "(none)":
+            chosen = next(cs for cs in ex.config.case_studies if cs.name == chosen_name)
+            st.caption(chosen.summary)
+            with st.expander("What actually happened (historical outcome)"):
+                st.write(chosen.historical_outcome)
+            st.write(
+                "Question for this round: starting from these real historical positions, can you reach a "
+                "**negotiated** settlement using ZOPA/frontier analysis -- where history instead required "
+                "third-party adjudication?"
+            )
+            case_study_defaults_a = chosen.party_a_opening
+            case_study_defaults_b = chosen.party_b_opening
+        st.divider()
+
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"##### {names['A']}'s offer")
-        package_a = _package_editor(ex.issues, key_prefix="offer_a")
+        package_a = _package_editor(ex.issues, key_prefix=f"offer_a__{cs_key_suffix}", defaults=case_study_defaults_a)
         if st.button(f"Submit {names['A']}'s offer", key="submit_a"):
             scores = ex.submit_offer("A", package_a)
             st.session_state["last_scores_a"] = scores
     with col2:
         st.markdown(f"##### {names['B']}'s offer")
-        package_b = _package_editor(ex.issues, key_prefix="offer_b")
+        package_b = _package_editor(ex.issues, key_prefix=f"offer_b__{cs_key_suffix}", defaults=case_study_defaults_b)
         if st.button(f"Submit {names['B']}'s offer", key="submit_b"):
             scores = ex.submit_offer("B", package_b)
             st.session_state["last_scores_b"] = scores
@@ -357,6 +380,26 @@ def render_debrief(ex: Exercise, names: dict[str, str]) -> None:
     for party, vf in ex.value_functions.items():
         with st.expander(f"{names[party]}'s weights"):
             st.write(vf.weights)
+
+    active_case_study_name = st.session_state.get("active_case_study")
+    if active_case_study_name:
+        chosen = next((cs for cs in ex.config.case_studies if cs.name == active_case_study_name), None)
+        if chosen is not None:
+            st.markdown("#### Historical case study comparison")
+            st.markdown(f"**Case study:** {chosen.name}")
+            st.write(chosen.historical_outcome)
+            if ex.status == ExerciseStatus.SETTLED:
+                st.success(
+                    "This exercise reached a **negotiated** settlement -- historically, this dispute was "
+                    "resolved by third-party adjudication instead. Compare the agreed package above against "
+                    "what the adjudicator actually decided."
+                )
+            else:
+                st.warning(
+                    "This exercise also ended without a negotiated settlement, same as the real dispute -- "
+                    "except historically the treaty's adjudication mechanism (Neutral Expert or Court of "
+                    "Arbitration) still produced a binding outcome, which this exercise's impasse does not."
+                )
 
     if ex.status == ExerciseStatus.IMPASSE:
         reason = ex.current_round.facilitator_notes

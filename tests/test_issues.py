@@ -3,7 +3,7 @@ import pytest
 from riparia.config_schema import load_config
 from riparia.issues import enumerate_packages, is_feasible, load_issues, validate_package
 
-CONFIG_PATH = "src/riparia/config/indus_style_v1.yaml"
+CONFIG_PATH = "src/riparia/config/generic_basin_v1.yaml"
 
 
 def _issues():

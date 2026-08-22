@@ -27,7 +27,7 @@ from riparia.hydrology import generate_climatology
 from riparia.issues import Package
 from riparia.payoffs import batna
 
-CONFIG_PATH = str(Path(__file__).resolve().parent.parent / "src" / "riparia" / "config" / "indus_style_v1.yaml")
+CONFIG_PATH = str(Path(__file__).resolve().parent.parent / "src" / "riparia" / "config" / "generic_basin_v1.yaml")
 
 # Custom Functions
 

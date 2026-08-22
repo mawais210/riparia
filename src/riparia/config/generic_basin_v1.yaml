@@ -1,0 +1,346 @@
+# Default scenario: a generic, synthetic two-party river basin.
+# Country A = upstream riparian, Country B = downstream riparian.
+# Units: volumes in MCM (million cubic metres), monthly flows in MCM/month,
+# money in MUSD/year. See src/riparia/config_schema.py for field semantics,
+# and docs/METHODOLOGY.md for the citations behind each relationship.
+#
+# This scenario is intentionally generic (no real basin's name or numbers).
+# For a scenario framed around a specific real basin, with background facts
+# shown in the app's Brief tab, see indus_basin_v1.yaml.
+
+name: "Generic Two-Party Basin (Synthetic)"
+description: >
+  A synthetic two-party transboundary basin: a large snow/monsoon-fed river,
+  an upstream storage-and-hydropower riparian with its own consumptive
+  demand, and a downstream irrigation-dependent riparian. Not modeled on any
+  specific real basin, and not a calibrated hydrological model — see
+  LIMITATIONS.md.
+
+time:
+  water_year_start: 4  # April
+  seasons:
+    kharif: [4, 5, 6, 7, 8, 9]    # monsoon / high-flow season
+    rabi: [10, 11, 12, 1, 2, 3]   # low-flow season
+  low_flow_season: rabi
+
+hydrology:
+  mean_annual_flow_mcm: 175000
+  seasonal_shape:
+    1: 0.030
+    2: 0.028
+    3: 0.035
+    4: 0.055
+    5: 0.075
+    6: 0.110
+    7: 0.170
+    8: 0.180
+    9: 0.130
+    10: 0.075
+    11: 0.045
+    12: 0.033
+  tributary_inflow_fraction: 0.15
+  travel_time_days: 2.0
+  muskingum_x: 0.2
+  daily_disagg:
+    cv_low: 0.10
+    cv_high: 0.35
+    phi: 0.6
+  ensemble:
+    n_years: 30
+    drought_prob: 0.2
+    wet_prob: 0.2
+    seed: 42
+    dry_scale: 0.70
+    wet_scale: 1.30
+
+basin:
+  reservoirs:
+    upstream:
+      name: "Country A Dam"
+      fill_months: [7, 8]
+      release_months: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12]
+      fill_fraction: 0.90
+      # min_release_mcm_per_month is unused for the upstream reservoir: its
+      # release floor is instead computed per-step from the package's
+      # allocation_mechanism issue (see system.py's _make_floor_fn).
+      min_release_mcm_per_month: 0
+      spin_up_years: 5
+      initial_storage_fraction: 0.5
+      live_storage_mcm: null
+      enabled: true
+    downstream:
+      name: "Country B Barrage"
+      fill_months: [7, 8, 9]
+      release_months: [1, 2, 3, 4, 5, 6, 10, 11, 12]
+      fill_fraction: 0.85
+      min_release_mcm_per_month: 100
+      spin_up_years: 3
+      initial_storage_fraction: 0.5
+      live_storage_mcm: 2000
+      enabled: true
+
+  # Demand shapes only -- annual totals are derived from `agriculture` below
+  # (command area x crop-mix-blended water use) so a party's demand target
+  # always matches the crop economics used to score its outcome terms.
+  demand:
+    b_irrigation_shape:
+      1: 0.070
+      2: 0.060
+      3: 0.070
+      4: 0.090
+      5: 0.110
+      6: 0.120
+      7: 0.090
+      8: 0.070
+      9: 0.070
+      10: 0.090
+      11: 0.090
+      12: 0.070
+    a_consumptive_shape:
+      1: 0.040
+      2: 0.040
+      3: 0.060
+      4: 0.100
+      5: 0.130
+      6: 0.140
+      7: 0.110
+      8: 0.090
+      9: 0.080
+      10: 0.080
+      11: 0.070
+      12: 0.060
+
+  # Four illustrative major crops (not calibrated to any specific
+  # cultivar or region), each party planting its own area of each -- see
+  # economics.py and docs/METHODOLOGY.md. Water use per 1000ha is a rough
+  # seasonal-depth-times-area conversion (e.g. sugarcane ~2.2m depth over
+  # 1000ha = 22 MCM), illustrative only.
+  agriculture:
+    crops:
+      wheat:
+        label: "wheat (low-water staple)"
+        water_use_mcm_per_1000ha: 4.5
+        income_musd_per_1000ha: 0.4
+        labor_persondays_per_1000ha: 40000
+      rice:
+        label: "rice (water-intensive staple)"
+        water_use_mcm_per_1000ha: 16.0
+        income_musd_per_1000ha: 0.9
+        labor_persondays_per_1000ha: 140000
+      cotton:
+        label: "cotton (cash crop)"
+        water_use_mcm_per_1000ha: 7.0
+        income_musd_per_1000ha: 1.1
+        labor_persondays_per_1000ha: 110000
+      sugarcane:
+        label: "sugarcane (highest-water cash crop)"
+        water_use_mcm_per_1000ha: 22.0
+        income_musd_per_1000ha: 1.6
+        labor_persondays_per_1000ha: 160000
+    parties:
+      A:
+        crop_areas_1000ha:
+          wheat: 800
+          rice: 100
+          cotton: 250
+          sugarcane: 50
+      B:
+        crop_areas_1000ha:
+          wheat: 4500
+          rice: 1500
+          cotton: 3000
+          sugarcane: 700
+
+issues:
+  definitions:
+    - name: upstream_storage_capacity
+      description: "Live storage capacity of Country A's upstream reservoir"
+      levels:
+        - label: none
+          params: {live_storage_mcm: 0}
+        - label: small
+          params: {live_storage_mcm: 3000}
+        - label: medium
+          params: {live_storage_mcm: 8000}
+        - label: large
+          params: {live_storage_mcm: 15000}
+
+    - name: filling_window
+      description: "Months during which Country A may fill its reservoir"
+      levels:
+        - label: wet_season
+          params: {months: [7, 8]}
+        - label: shoulder
+          params: {months: [6, 7, 8, 9]}
+        - label: low_season
+          params: {months: [4, 5, 6, 7, 8, 9, 10]}
+        - label: unrestricted
+          params: {months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
+
+    - name: allocation_mechanism
+      description: >
+        How Country A's release obligation to Country B is computed. This is
+        the mechanism that determines whether growth in A's own consumptive
+        demand (see basin.demand.a_consumptive_shape) can erode B's actual
+        delivery, or whether B is protected against it -- see
+        docs/METHODOLOGY.md, "The allocation-mechanism issue".
+      levels:
+        - label: fixed_low
+          params: {mechanism: fixed_volume, min_release_mcm_per_month: 300}
+        - label: fixed_high
+          params: {mechanism: fixed_volume, min_release_mcm_per_month: 1200}
+        - label: percentage_of_flow
+          params: {mechanism: percentage_of_flow, release_share: 0.30}
+        - label: zonal_formula
+          params:
+            mechanism: zonal_formula
+            threshold_mcm_per_month: 8000
+            surplus_share_to_b: 0.35
+        - label: adaptive_rule_curve
+          params:
+            mechanism: adaptive_rule_curve
+            base_min_release_mcm_per_month: 300
+            sensitivity: 0.5
+            target_storage_fraction:
+              1: 0.55
+              2: 0.45
+              3: 0.35
+              4: 0.25
+              5: 0.20
+              6: 0.20
+              7: 0.45
+              8: 0.75
+              9: 0.90
+              10: 0.85
+              11: 0.75
+              12: 0.65
+
+    - name: data_exchange
+      description: "Hydrological data exchange regime"
+      levels:
+        - label: none
+          params: {tier: 0}
+        - label: monthly
+          params: {tier: 1}
+        - label: weekly
+          params: {tier: 2}
+        - label: daily_verified
+          params: {tier: 3}
+
+    - name: flood_early_warning
+      description: "Flood early-warning cooperation"
+      levels:
+        - label: none
+          params: {tier: 0}
+        - label: seasonal
+          params: {tier: 1}
+        - label: real_time
+          params: {tier: 2}
+
+    - name: financing_transfer
+      description: "Annual financing transfer between parties, MUSD/year (positive = B pays A)"
+      levels:
+        - label: b_pays_a
+          params: {transfer_musd_per_year: 50}
+        - label: none
+          params: {transfer_musd_per_year: 0}
+        - label: a_pays_b
+          params: {transfer_musd_per_year: -50}
+        - label: joint_fund
+          params: {transfer_musd_per_year: 20}
+
+  # A package is infeasible if it matches ALL key/value pairs of any entry below.
+  forbidden_combinations:
+    - upstream_storage_capacity: none
+      filling_window: shoulder
+    - upstream_storage_capacity: none
+      filling_window: low_season
+    - upstream_storage_capacity: none
+      filling_window: unrestricted
+    - upstream_storage_capacity: small
+      filling_window: unrestricted
+
+parties:
+  A:
+    name: "Upstream Riparian (Country A)"
+    batna: 45.0
+    weights:
+      upstream_storage_capacity: 0.16
+      filling_window: 0.10
+      allocation_mechanism: 0.06
+      data_exchange: 0.04
+      flood_early_warning: 0.04
+      financing_transfer: 0.10
+      firm_hydropower: 0.20
+      storage_utilization: 0.10
+      agricultural_income: 0.15
+      agricultural_labor: 0.05
+    issue_scores:
+      upstream_storage_capacity: {none: 5, small: 45, medium: 75, large: 100}
+      filling_window: {wet_season: 35, shoulder: 60, low_season: 85, unrestricted: 100}
+      allocation_mechanism: {fixed_low: 95, percentage_of_flow: 55, adaptive_rule_curve: 65, zonal_formula: 70, fixed_high: 15}
+      data_exchange: {none: 100, monthly: 88, weekly: 72, daily_verified: 50}
+      flood_early_warning: {none: 100, seasonal: 82, real_time: 60}
+      financing_transfer: {b_pays_a: 100, none: 55, a_pays_b: 5, joint_fund: 68}
+    outcome_terms:
+      firm_hydropower:
+        source: firm_hydropower_gwh_per_year
+        norm_min: 0
+        norm_max: 700
+      storage_utilization:
+        source: storage_utilization_fraction
+        norm_min: 0
+        norm_max: 1
+      agricultural_income:
+        source: a_agricultural_income_musd
+        norm_min: 0
+        norm_max: 765
+      agricultural_labor:
+        source: a_agricultural_labor_persondays
+        norm_min: 0
+        norm_max: 81500000
+
+  B:
+    name: "Downstream Riparian (Country B)"
+    batna: 45.0
+    weights:
+      upstream_storage_capacity: 0.05
+      filling_window: 0.08
+      allocation_mechanism: 0.13
+      data_exchange: 0.06
+      flood_early_warning: 0.07
+      financing_transfer: 0.08
+      irrigation_reliability: 0.15
+      low_season_volume: 0.08
+      shortfall_penalty: 0.05
+      agricultural_income: 0.18
+      agricultural_labor: 0.07
+    issue_scores:
+      upstream_storage_capacity: {none: 100, small: 68, medium: 38, large: 8}
+      filling_window: {wet_season: 100, shoulder: 68, low_season: 35, unrestricted: 10}
+      allocation_mechanism: {fixed_high: 100, zonal_formula: 80, adaptive_rule_curve: 55, percentage_of_flow: 45, fixed_low: 10}
+      data_exchange: {none: 8, monthly: 55, weekly: 80, daily_verified: 100}
+      flood_early_warning: {none: 8, seasonal: 58, real_time: 100}
+      financing_transfer: {b_pays_a: 8, none: 55, a_pays_b: 100, joint_fund: 75}
+    outcome_terms:
+      irrigation_reliability:
+        source: irrigation_reliability_fraction
+        norm_min: 0
+        norm_max: 1
+      low_season_volume:
+        source: low_season_volume_mcm
+        norm_min: 0
+        norm_max: 55000
+      shortfall_penalty:
+        source: shortfall_fraction
+        norm_min: 0
+        norm_max: 1
+        invert: true
+      agricultural_income:
+        source: b_agricultural_income_musd
+        norm_min: 0
+        norm_max: 7570
+      agricultural_labor:
+        source: b_agricultural_labor_persondays
+        norm_min: 0
+        norm_max: 832000000

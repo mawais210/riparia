@@ -3,15 +3,19 @@ candidate package delivers to it.
 
 This is deliberately NOT a negotiated issue (see docs/METHODOLOGY.md,
 "Why crop-mix isn't a Package field"): neither party negotiates the
-other's farmers' cropping choices in a water treaty. `crop_mix_fraction`
-is each party's own continuous domestic policy lever, explored via a
-slider in the facilitator app, layered on top of the 7 negotiated issues.
+other's farmers' cropping choices in a water treaty. Each party's cropping
+pattern -- how many hectares it plants of each named crop -- is its own
+continuous domestic policy lever, explored via sliders in the facilitator
+app, layered on top of the negotiated issues.
 
-The water-yield response is a linearised version of the FAO crop-water
-production function (Doorenbos & Kassam 1979, FAO Irrigation and Drainage
-Paper 33: relative yield loss proportional to relative water deficit) --
-see docs/METHODOLOGY.md for the citation and the linearisation this
-simplifies away.
+Water use, income, and labor are computed per crop and summed, so a
+party's total agricultural demand and outcomes reflect an actual cropping
+pattern (e.g. wheat + rice + cotton + sugarcane), not a single blended
+archetype. The water-yield response is a linearised version of the FAO
+crop-water production function (Doorenbos & Kassam 1979, FAO Irrigation
+and Drainage Paper 33: relative yield loss proportional to relative water
+deficit) -- see docs/METHODOLOGY.md for the citation and the linearisation
+this simplifies away.
 """
 
 # Import necessary libraries
@@ -38,53 +42,45 @@ class AgriculturalOutcome:
     water_satisfaction_fraction: float
 
 
-def _blend(f: float, area: float, high: CropProfile, low: CropProfile, field: str) -> float:
-    return f * area * getattr(high, field) + (1 - f) * area * getattr(low, field)
+def water_requirement_mcm(areas_1000ha: dict[str, float], crops: dict[str, CropProfile]) -> float:
+    """Full (unconstrained-by-supply) water requirement, MCM, of a cropping
+    pattern: sum over every crop of area x that crop's water use per
+    1000ha. This is the same figure used both as a party's irrigation or
+    consumptive demand target (system.py) and as the denominator of
+    `agricultural_outcomes`'s satisfaction fraction, so the two stay
+    consistent with each other.
 
-
-def water_requirement_mcm(
-    crop_mix_fraction: float,
-    command_area_1000ha: float,
-    high_water_crop: CropProfile,
-    low_water_crop: CropProfile,
-) -> float:
-    """Full (unconstrained-by-supply) water requirement, MCM, of the blended
-    cropping pattern. This is the same figure used both as a party's
-    irrigation/consumptive demand target (system.py) and as the denominator
-    of `agricultural_outcomes`'s satisfaction fraction, so the two stay
-    consistent with each other."""
-    f = min(max(crop_mix_fraction, 0.0), 1.0)
-    return _blend(f, command_area_1000ha, high_water_crop, low_water_crop, "water_use_mcm_per_1000ha")
+    Args:
+        areas_1000ha: crop name -> planted area, thousand hectares.
+        crops: crop name -> CropProfile. Every key in `areas_1000ha` must
+            also be a key in `crops`.
+    """
+    return sum(areas_1000ha[name] * crops[name].water_use_mcm_per_1000ha for name in areas_1000ha)
 
 
 def agricultural_outcomes(
     water_available_mcm: float,
-    crop_mix_fraction: float,
-    command_area_1000ha: float,
-    high_water_crop: CropProfile,
-    low_water_crop: CropProfile,
+    areas_1000ha: dict[str, float],
+    crops: dict[str, CropProfile],
 ) -> AgriculturalOutcome:
-    """Blend two crop archetypes by `crop_mix_fraction` (share of command
-    area in `high_water_crop`), then scale income/labor by how much of the
-    resulting water requirement `water_available_mcm` actually covers.
+    """Score a cropping pattern by how much of its water requirement
+    `water_available_mcm` actually covers, scaling income and labor by that
+    same satisfaction fraction across every crop.
 
     Args:
         water_available_mcm: water actually delivered/diverted for this
             party's agricultural use this period, MCM.
-        crop_mix_fraction: 0-1, share of `command_area_1000ha` planted with
-            `high_water_crop` (the rest with `low_water_crop`).
-        command_area_1000ha: total irrigated command area, thousand hectares.
-        high_water_crop, low_water_crop: the two crop archetypes to blend.
+        areas_1000ha: crop name -> planted area, thousand hectares.
+        crops: crop name -> CropProfile.
 
     Returns:
         AgriculturalOutcome with water used, income (MUSD), labor demand
         (person-days), and the water-satisfaction fraction actually
-        achieved (1.0 = full requirement met).
+        achieved (1.0 = full requirement met, across every crop).
     """
-    f = min(max(crop_mix_fraction, 0.0), 1.0)
-    water_required = water_requirement_mcm(f, command_area_1000ha, high_water_crop, low_water_crop)
-    potential_income = _blend(f, command_area_1000ha, high_water_crop, low_water_crop, "income_musd_per_1000ha")
-    potential_labor = _blend(f, command_area_1000ha, high_water_crop, low_water_crop, "labor_persondays_per_1000ha")
+    water_required = water_requirement_mcm(areas_1000ha, crops)
+    potential_income = sum(areas_1000ha[name] * crops[name].income_musd_per_1000ha for name in areas_1000ha)
+    potential_labor = sum(areas_1000ha[name] * crops[name].labor_persondays_per_1000ha for name in areas_1000ha)
 
     satisfaction = 1.0 if water_required <= 0 else min(1.0, water_available_mcm / water_required)
 

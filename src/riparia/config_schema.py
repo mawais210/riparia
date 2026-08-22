@@ -170,14 +170,27 @@ class CropProfileConfig(BaseModel):
 
 
 class PartyAgricultureConfig(BaseModel):
-    command_area_1000ha: float = Field(..., gt=0)
-    default_crop_mix_fraction: float = Field(..., ge=0, le=1)
+    crop_areas_1000ha: dict[str, float]
+
+    @model_validator(mode="after")
+    def _areas_non_negative(self) -> "PartyAgricultureConfig":
+        for name, area in self.crop_areas_1000ha.items():
+            if area < 0:
+                raise ValueError(f"crop area for {name!r} must be >= 0, got {area}")
+        return self
 
 
 class AgricultureConfig(BaseModel):
-    high_water_crop: CropProfileConfig
-    low_water_crop: CropProfileConfig
+    crops: dict[str, CropProfileConfig]
     parties: dict[Literal["A", "B"], PartyAgricultureConfig]
+
+    @model_validator(mode="after")
+    def _party_crop_areas_reference_known_crops(self) -> "AgricultureConfig":
+        for party, party_cfg in self.parties.items():
+            unknown = set(party_cfg.crop_areas_1000ha.keys()) - set(self.crops.keys())
+            if unknown:
+                raise ValueError(f"party {party} references undefined crops {unknown}")
+        return self
 
 
 class BasinConfig(BaseModel):
@@ -189,6 +202,14 @@ class BasinConfig(BaseModel):
 class ScenarioConfig(BaseModel):
     name: str
     description: str = ""
+    factsheet: str = ""
+    """Optional background reading shown in the app's Brief tab: real-world
+    context (treaty history, structure, challenges) for a scenario framed
+    around a specific basin. Empty for fully generic scenarios."""
+    default_party_names: dict[Literal["A", "B"], str] | None = None
+    """Optional suggested display names (e.g. real country names) seeded
+    into the facilitator app's party-name inputs. None keeps the generic
+    "Country A" / "Country B" defaults."""
     time: TimeConfig
     hydrology: HydrologyConfig
     basin: BasinConfig

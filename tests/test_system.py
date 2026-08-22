@@ -6,7 +6,7 @@ from riparia.hydrology import generate_climatology
 from riparia.issues import Package, load_issues
 from riparia.system import BasinConfig, route_muskingum, run_basin
 
-CONFIG_PATH = "src/riparia/config/indus_style_v1.yaml"
+CONFIG_PATH = "src/riparia/config/generic_basin_v1.yaml"
 
 
 def _basin_config_and_trace():

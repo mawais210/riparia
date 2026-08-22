@@ -8,7 +8,7 @@ from riparia.issues import Package, load_issues
 from riparia.payoffs import batna, load_value_functions
 from riparia.system import BasinConfig
 
-CONFIG_PATH = "src/riparia/config/indus_style_v1.yaml"
+CONFIG_PATH = "src/riparia/config/generic_basin_v1.yaml"
 
 
 def _fixture(n_years: int = 15):

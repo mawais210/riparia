@@ -44,6 +44,28 @@ CONFIG_DIR = REPO_ROOT / "src" / "riparia" / "config"
 # Custom Functions
 
 
+def _fmt_number(n: float, decimals: int = 1) -> str:
+    """Human-readable K/M/B suffix for a raw count (e.g. person-days,
+    GWh), so it never renders as a bare seven-plus-digit number."""
+    abs_n = abs(n)
+    if abs_n >= 1_000_000_000:
+        return f"{n / 1_000_000_000:.{decimals}f}B"
+    if abs_n >= 1_000_000:
+        return f"{n / 1_000_000:.{decimals}f}M"
+    if abs_n >= 1_000:
+        return f"{n / 1_000:.{decimals}f}K"
+    return f"{n:.{decimals}f}"
+
+
+def _fmt_musd(musd: float) -> str:
+    """Format a value already denominated in MUSD (millions of USD):
+    switch to billions above $1000M instead of stacking another K/M/B
+    suffix on top of the existing millions unit."""
+    if abs(musd) >= 1000:
+        return f"${musd / 1000:.2f}B"
+    return f"${musd:.0f}M"
+
+
 def _crop_profile(cfg) -> CropProfile:
     return CropProfile(
         label=cfg.label,
@@ -51,6 +73,25 @@ def _crop_profile(cfg) -> CropProfile:
         income_musd_per_1000ha=cfg.income_musd_per_1000ha,
         labor_persondays_per_1000ha=cfg.labor_persondays_per_1000ha,
     )
+
+
+def _crop_area_editor(ex, party: str, party_label: str, key_prefix: str) -> dict[str, float]:
+    """Sliders for one party's planted area of every crop in the scenario's
+    crop library, defaulting to the scenario config's areas. A domestic
+    policy lever, not a negotiated issue -- see docs/METHODOLOGY.md."""
+    ag_cfg = ex.config.basin.agriculture
+    party_cfg = ag_cfg.parties[party]
+    st.markdown(f"**{party_label}'s cropping pattern** (1000 ha per crop)")
+    areas = {}
+    cols = st.columns(len(ag_cfg.crops))
+    for i, (crop_name, crop_cfg) in enumerate(ag_cfg.crops.items()):
+        default_area = party_cfg.crop_areas_1000ha.get(crop_name, 0.0)
+        max_area = max(default_area * 2.5, 100.0)
+        areas[crop_name] = cols[i].slider(
+            crop_name.capitalize(), 0.0, max_area, default_area, max_area / 100,
+            key=f"{key_prefix}_{party}_{crop_name}",
+        )
+    return areas
 
 
 @st.cache_data
@@ -90,11 +131,20 @@ def _party_names(ex: Exercise) -> dict[str, str]:
     the UI would otherwise say "Country A"/"Country B". The underlying data
     (Package selections, ValueFunction weights, scores) always keys on the
     fixed "A"/"B" party ids from the scenario config -- only display labels
-    change."""
+    change. Defaults come from the scenario's `default_party_names` if it
+    sets any (e.g. the Indus Basin scenario suggests "India"/"Pakistan");
+    the widget key is scoped to the current scenario path so switching
+    scenarios re-seeds fresh defaults instead of carrying over a stale name."""
+    defaults = ex.config.default_party_names or {"A": "Country A", "B": "Country B"}
+    scenario_path = st.session_state.get("scenario_path", "")
     st.sidebar.markdown("#### Party names")
-    name_a = st.sidebar.text_input("Upstream party name", value="Country A", key="party_name_A")
-    name_b = st.sidebar.text_input("Downstream party name", value="Country B", key="party_name_B")
-    return {"A": name_a.strip() or "Country A", "B": name_b.strip() or "Country B"}
+    name_a = st.sidebar.text_input(
+        "Upstream party name", value=defaults["A"], key=f"party_name_A__{scenario_path}"
+    )
+    name_b = st.sidebar.text_input(
+        "Downstream party name", value=defaults["B"], key=f"party_name_B__{scenario_path}"
+    )
+    return {"A": name_a.strip() or defaults["A"], "B": name_b.strip() or defaults["B"]}
 
 
 def _package_editor(issues, key_prefix: str, defaults: dict[str, str] | None = None) -> Package:
@@ -128,6 +178,11 @@ def render_brief(ex: Exercise, names: dict[str, str]) -> None:
     for issue in ex.issues:
         st.markdown(f"- **{issue.name}**: {issue.description or ', '.join(issue.level_labels())}")
 
+    if ex.config.factsheet.strip():
+        st.markdown("#### Basin factsheet")
+        st.caption("Real-world background, not modeled numerically in this exercise.")
+        st.markdown(ex.config.factsheet)
+
 
 def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
     st.subheader("Joint fact-finding: simulate a candidate package")
@@ -140,17 +195,11 @@ def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
     )
     trend = ClimateTrend(name="custom", mean_flow_multiplier=mean_flow_mult, timing_shift_months=timing_shift)
 
-    st.markdown("#### Domestic crop-mix response *(each party's own choice -- not negotiated)*")
+    st.markdown("#### Domestic cropping pattern *(each party's own choice -- not negotiated)*")
     ag_cfg = ex.config.basin.agriculture
-    col_a, col_b = st.columns(2)
-    a_crop_mix = col_a.slider(
-        f"{names['A']}: share of land in water-intensive crop",
-        0.0, 1.0, ag_cfg.parties["A"].default_crop_mix_fraction, 0.05, key="sim_a_crop_mix",
-    )
-    b_crop_mix = col_b.slider(
-        f"{names['B']}: share of land in water-intensive crop",
-        0.0, 1.0, ag_cfg.parties["B"].default_crop_mix_fraction, 0.05, key="sim_b_crop_mix",
-    )
+    crops = {name: _crop_profile(cfg) for name, cfg in ag_cfg.crops.items()}
+    a_areas = _crop_area_editor(ex, "A", names["A"], key_prefix="sim")
+    b_areas = _crop_area_editor(ex, "B", names["B"], key_prefix="sim")
 
     monthly = generate_climatology(ex.config.hydrology.seasonal_shape, ex.config.hydrology.mean_annual_flow_mcm)
     trended = apply_climate_trend(monthly, trend)
@@ -159,15 +208,8 @@ def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
 
     outcomes = run_basin(ex.basin_config, package, trace)
 
-    high_crop, low_crop = _crop_profile(ag_cfg.high_water_crop), _crop_profile(ag_cfg.low_water_crop)
-    a_ag = agricultural_outcomes(
-        float(outcomes.a_consumptive_diversion.sum() / n_years), a_crop_mix,
-        ag_cfg.parties["A"].command_area_1000ha, high_crop, low_crop,
-    )
-    b_ag = agricultural_outcomes(
-        float(outcomes.delivered_to_b.sum() / n_years), b_crop_mix,
-        ag_cfg.parties["B"].command_area_1000ha, high_crop, low_crop,
-    )
+    a_ag = agricultural_outcomes(float(outcomes.a_consumptive_diversion.sum() / n_years), a_areas, crops)
+    b_ag = agricultural_outcomes(float(outcomes.delivered_to_b.sum() / n_years), b_areas, crops)
 
     fig, ax = plt.subplots(figsize=(9, 3.5))
     outcomes.upstream_release.plot(ax=ax, label=f"{names['A']} release (gross, at the dam)")
@@ -181,14 +223,14 @@ def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(f"{names['B']} irrigation reliability", f"{outcomes.irrigation_reliability_fraction:.0%}")
     c2.metric(f"{names['B']} shortfall", f"{outcomes.shortfall_fraction:.0%}")
-    c3.metric(f"{names['A']} firm hydropower", f"{outcomes.firm_hydropower_gwh_per_year:.0f} GWh/yr")
+    c3.metric(f"{names['A']} firm hydropower", f"{_fmt_number(outcomes.firm_hydropower_gwh_per_year)} GWh/yr")
     c4.metric(f"{names['A']} storage utilization", f"{outcomes.storage_utilization_fraction:.0%}")
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric(f"{names['A']} agricultural income", f"${a_ag.income_musd:.0f}M/yr")
-    c6.metric(f"{names['A']} agricultural labor", f"{a_ag.labor_persondays / 1000:.0f}k person-days/yr")
-    c7.metric(f"{names['B']} agricultural income", f"${b_ag.income_musd:.0f}M/yr")
-    c8.metric(f"{names['B']} agricultural labor", f"{b_ag.labor_persondays / 1000:.0f}k person-days/yr")
+    c5.metric(f"{names['A']} agricultural income", f"{_fmt_musd(a_ag.income_musd)}/yr")
+    c6.metric(f"{names['A']} agricultural labor", f"{_fmt_number(a_ag.labor_persondays)} person-days/yr")
+    c7.metric(f"{names['B']} agricultural income", f"{_fmt_musd(b_ag.income_musd)}/yr")
+    c8.metric(f"{names['B']} agricultural labor", f"{_fmt_number(b_ag.labor_persondays)} person-days/yr")
 
 
 def render_negotiate(ex: Exercise, names: dict[str, str]) -> None:

@@ -69,17 +69,30 @@ src/riparia/
     engine.py                 round state machine, single negotiating text
     logging_.py                append-only event log
     config_schema.py            pydantic schema for scenario YAML files
-    config/indus_style_v1.yaml   default scenario
+    config/generic_basin_v1.yaml   default (fully generic) scenario
+    config/indus_basin_v1.yaml       Indus Basin scenario, with a factsheet
 app/facilitator.py    Streamlit facilitator application
 examples/run_full_exercise.py   scripted end-to-end example
 tests/                  pytest suite
 ```
 
-## Default scenario
+## Scenarios
 
-`indus_style_v1.yaml` is a stylised, Indus-inspired two-party basin: 6
-negotiated issues (upstream storage capacity, filling window, allocation
-mechanism, data exchange, flood early warning, financing transfer) giving
-~2,900 feasible packages, a non-empty ZOPA, and a Pareto frontier with
-dozens of distinct non-dominated points — see `docs/METHODOLOGY.md` for what
-each issue represents and why the space is kept to this size.
+The facilitator app's sidebar lists every validated scenario YAML in
+`src/riparia/config/`, so the basin isn't fixed in code:
+
+- `generic_basin_v1.yaml` (default): a fully generic, unnamed two-party
+  basin. 6 negotiated issues (upstream storage capacity, filling window,
+  allocation mechanism, data exchange, flood early warning, financing
+  transfer) giving ~2,900 feasible packages, a non-empty ZOPA, and a Pareto
+  frontier with dozens of distinct non-dominated points — see
+  `docs/METHODOLOGY.md` for what each issue represents.
+- `indus_basin_v1.yaml`: the same model framed around the real Indus
+  basin, with a factsheet (treaty history, structure, and challenges) shown
+  in the app's Brief tab. Its hydrology/economics numbers are still the
+  same illustrative model as the generic scenario, not yet calibrated to
+  real Indus data — see LIMITATIONS.md.
+
+Adding another basin (Nile, Central Asian rivers, etc.) means authoring a
+new scenario file and dropping it in `src/riparia/config/`; it appears in
+the app automatically.

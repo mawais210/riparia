@@ -7,7 +7,7 @@ from riparia.issues import enumerate_packages, load_issues
 from riparia.payoffs import ScoredPackage, batna, load_value_functions, score, score_all_packages, zopa
 from riparia.system import BasinConfig
 
-CONFIG_PATH = "src/riparia/config/indus_style_v1.yaml"
+CONFIG_PATH = "src/riparia/config/generic_basin_v1.yaml"
 
 
 def _fixture(n_years: int = 3):

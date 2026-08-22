@@ -8,7 +8,7 @@ from riparia.engine import Exercise, ExerciseStatus, Phase
 from riparia.issues import Package
 from riparia.payoffs import batna
 
-CONFIG_PATH = "src/riparia/config/indus_style_v1.yaml"
+CONFIG_PATH = "src/riparia/config/generic_basin_v1.yaml"
 
 FULL_PACKAGE = {
     "upstream_storage_capacity": "medium",

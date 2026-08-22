@@ -288,14 +288,25 @@ it.
 A scenario file, not the code, defines a basin. Every module from
 `issues.py` down reads a `ScenarioConfig` built from whichever YAML file is
 loaded; nothing in the code itself is specific to any one basin. The
-facilitator app's sidebar lists every validated YAML file in
+default scenario, `generic_basin_v1.yaml`, is deliberately unnamed for this
+reason.
+
+`indus_basin_v1.yaml` is the first example of a basin-specific scenario:
+the same underlying model, renamed and paired with a `factsheet` field
+(real Indus Waters Treaty history, structure, and challenges) that the
+app's Brief tab renders. Its hydrology and economics numbers are still the
+same illustrative model as the generic scenario, not sourced from real
+Indus data.
+
+The facilitator app's sidebar lists every validated YAML file in
 `src/riparia/config/`, so adding a Nile-style or Central-Asian scenario
 means authoring a new scenario file (issues, value functions, hydrology,
-agriculture) and placing it in that directory. It appears in the dropdown
-automatically. What it does not do automatically is calibrate that file's
-numbers to a real basin's actual hydrology and economics; that needs real
-data (GRDC gauge records, FAO AQUASTAT) and is separate follow-on work, not
-a code change. See LIMITATIONS.md.
+agriculture, and optionally a factsheet) and placing it in that directory.
+It appears in the dropdown automatically. What it does not do
+automatically is calibrate that file's numbers to a real basin's actual
+hydrology and economics; that needs real data (GRDC gauge records, FAO
+AQUASTAT) and is separate follow-on work, not a code change. See
+LIMITATIONS.md.
 
 ## References
 

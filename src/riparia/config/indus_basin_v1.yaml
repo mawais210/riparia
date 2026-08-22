@@ -1,16 +1,77 @@
-# Default scenario: an Indus-style two-party river basin.
-# Country A = upstream riparian, Country B = downstream riparian.
+# Indus Basin scenario: the same synthetic model as generic_basin_v1.yaml,
+# framed around the real Indus system and paired with a factsheet shown in
+# the app's Brief tab. Country A = upstream riparian, Country B = downstream
+# riparian.
 # Units: volumes in MCM (million cubic metres), monthly flows in MCM/month,
 # money in MUSD/year. See src/riparia/config_schema.py for field semantics,
 # and docs/METHODOLOGY.md for the citations behind each relationship.
+#
+# IMPORTANT: hydrology, reservoir, and agriculture numbers below are still
+# the same illustrative synthetic model as generic_basin_v1.yaml (the mean
+# annual flow happens to be in the right order of magnitude for the real
+# Indus system, but nothing here is sourced from a gauge record, census, or
+# agricultural survey). Calibrating this scenario to real Indus data is
+# separate follow-on work -- see LIMITATIONS.md.
 
-name: "Indus-style v1"
+name: "Indus Basin (Illustrative)"
 description: >
-  Stylised two-party transboundary basin loosely patterned on the Indus system:
-  a large snow/monsoon-fed river, an upstream storage-and-hydropower riparian
-  with its own consumptive demand, and a downstream irrigation-dependent
-  riparian. Not a calibrated hydrological model of any real basin — see
-  LIMITATIONS.md.
+  The same synthetic two-party river-basin model as the generic scenario,
+  framed around the real Indus system: an upstream riparian (India) whose
+  storage and hydropower decisions affect a downstream riparian (Pakistan)
+  whose irrigated agriculture depends on the river. Numbers are still
+  illustrative, not calibrated to real Indus data -- see LIMITATIONS.md and
+  the factsheet below for real background.
+
+factsheet: >
+  The real Indus Waters Treaty (IWT), for background -- not modeled
+  numerically here.
+
+
+  History: signed in 1960 by India and Pakistan after nine years of
+  negotiation, brokered by the World Bank (International Bank for
+  Reconstruction and Development). It is one of the few water-sharing
+  treaties between the two countries to have persisted through several
+  subsequent wars.
+
+
+  Structure: the treaty divides the six main rivers of the Indus system.
+  The three "Eastern Rivers" (Ravi, Beas, Sutlej) were allocated to India
+  for essentially unrestricted use. The three "Western Rivers" (the Indus
+  mainstem, Jhelum, Chenab) were allocated largely to Pakistan, with India
+  permitted specified limited uses on them (run-of-river hydropower,
+  irrigation of certain existing areas, domestic use).
+
+
+  Institutions: the treaty created the Permanent Indus Commission, with one
+  Commissioner from each country, for routine information exchange, site
+  inspections, and first-line dispute resolution. Unresolved technical
+  "questions" can be referred to a Neutral Expert; broader "differences"
+  over treaty interpretation can escalate to a Court of Arbitration.
+
+
+  Disputes handled under these mechanisms: the Baglihar Dam dispute was
+  resolved via a Neutral Expert (2007); the Kishenganga hydroelectric
+  project dispute went to a Court of Arbitration (partial award, 2013).
+  Both concerned how much discretion India has in designing hydropower
+  projects on the Western Rivers without reducing Pakistan's entitlement.
+
+
+  Commonly cited challenges (independent of the treaty's legal structure):
+  glacial melt and climate change affecting long-term flow reliability and
+  timing, rising irrigation and municipal demand on both sides, sediment
+  management at dams, and periodic diplomatic strain affecting how smoothly
+  the treaty's institutions function in practice.
+
+
+  The treaty remains an active diplomatic topic; for its current status,
+  consult primary sources (the treaty text, Permanent Indus Commission
+  records, or reporting from established news organizations) rather than
+  this factsheet, which is background for a teaching exercise, not a
+  real-time status update.
+
+default_party_names:
+  A: "India"
+  B: "Pakistan"
 
 time:
   water_year_start: 4  # April
@@ -52,7 +113,7 @@ hydrology:
 basin:
   reservoirs:
     upstream:
-      name: "Country A Dam"
+      name: "Upstream Reservoir (India)"
       fill_months: [7, 8]
       release_months: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12]
       fill_fraction: 0.90
@@ -65,7 +126,7 @@ basin:
       live_storage_mcm: null
       enabled: true
     downstream:
-      name: "Country B Barrage"
+      name: "Downstream Barrage (Pakistan)"
       fill_months: [7, 8, 9]
       release_months: [1, 2, 3, 4, 5, 6, 10, 11, 12]
       fill_fraction: 0.85
@@ -76,8 +137,8 @@ basin:
       enabled: true
 
   # Demand shapes only -- annual totals are derived from `agriculture` below
-  # (command area x crop-mix-blended water use) so a party's demand target
-  # always matches the crop economics used to score its outcome terms.
+  # (crop-area x water-use-per-crop) so a party's demand target always
+  # matches the crop economics used to score its outcome terms.
   demand:
     b_irrigation_shape:
       1: 0.070
@@ -106,32 +167,51 @@ basin:
       11: 0.070
       12: 0.060
 
-  # Two illustrative crop archetypes (not calibrated to any specific
-  # cultivar), blended per party by `default_crop_mix_fraction` -- see
-  # economics.py and docs/METHODOLOGY.md.
+  # Four illustrative major crops (not calibrated to any specific
+  # cultivar or region), each party planting its own area of each -- see
+  # economics.py and docs/METHODOLOGY.md. Water use per 1000ha is a rough
+  # seasonal-depth-times-area conversion (e.g. sugarcane ~2.2m depth over
+  # 1000ha = 22 MCM), illustrative only.
   agriculture:
-    high_water_crop:
-      label: "water-intensive cash crop (e.g. rice/sugarcane)"
-      water_use_mcm_per_1000ha: 18.0
-      income_musd_per_1000ha: 1.2
-      labor_persondays_per_1000ha: 180000
-    low_water_crop:
-      label: "low-water staple (e.g. wheat/pulses)"
-      water_use_mcm_per_1000ha: 5.0
-      income_musd_per_1000ha: 0.5
-      labor_persondays_per_1000ha: 50000
+    crops:
+      wheat:
+        label: "wheat (low-water staple)"
+        water_use_mcm_per_1000ha: 4.5
+        income_musd_per_1000ha: 0.4
+        labor_persondays_per_1000ha: 40000
+      rice:
+        label: "rice (water-intensive staple)"
+        water_use_mcm_per_1000ha: 16.0
+        income_musd_per_1000ha: 0.9
+        labor_persondays_per_1000ha: 140000
+      cotton:
+        label: "cotton (cash crop)"
+        water_use_mcm_per_1000ha: 7.0
+        income_musd_per_1000ha: 1.1
+        labor_persondays_per_1000ha: 110000
+      sugarcane:
+        label: "sugarcane (highest-water cash crop)"
+        water_use_mcm_per_1000ha: 22.0
+        income_musd_per_1000ha: 1.6
+        labor_persondays_per_1000ha: 160000
     parties:
       A:
-        command_area_1000ha: 1200
-        default_crop_mix_fraction: 0.30
+        crop_areas_1000ha:
+          wheat: 800
+          rice: 100
+          cotton: 250
+          sugarcane: 50
       B:
-        command_area_1000ha: 8800
-        default_crop_mix_fraction: 0.40
+        crop_areas_1000ha:
+          wheat: 4500
+          rice: 1500
+          cotton: 3000
+          sugarcane: 700
 
 issues:
   definitions:
     - name: upstream_storage_capacity
-      description: "Live storage capacity of Country A's upstream reservoir"
+      description: "Live storage capacity of the upstream reservoir"
       levels:
         - label: none
           params: {live_storage_mcm: 0}
@@ -143,7 +223,7 @@ issues:
           params: {live_storage_mcm: 15000}
 
     - name: filling_window
-      description: "Months during which Country A may fill its reservoir"
+      description: "Months during which the upstream party may fill its reservoir"
       levels:
         - label: wet_season
           params: {months: [7, 8]}
@@ -156,10 +236,11 @@ issues:
 
     - name: allocation_mechanism
       description: >
-        How Country A's release obligation to Country B is computed. This is
-        the mechanism that determines whether growth in A's own consumptive
-        demand (see basin.demand.a_consumptive_shape) can erode B's actual
-        delivery, or whether B is protected against it -- see
+        How the upstream party's release obligation to the downstream party
+        is computed. This is the mechanism that determines whether growth
+        in the upstream party's own consumptive demand (see
+        basin.demand.a_consumptive_shape) can erode the downstream party's
+        actual delivery, or whether it is protected against it -- see
         docs/METHODOLOGY.md, "The allocation-mechanism issue".
       levels:
         - label: fixed_low
@@ -239,7 +320,7 @@ issues:
 
 parties:
   A:
-    name: "Upstream Riparian (Country A)"
+    name: "India (Upstream Riparian)"
     batna: 45.0
     weights:
       upstream_storage_capacity: 0.16
@@ -271,14 +352,14 @@ parties:
       agricultural_income:
         source: a_agricultural_income_musd
         norm_min: 0
-        norm_max: 852
+        norm_max: 765
       agricultural_labor:
         source: a_agricultural_labor_persondays
         norm_min: 0
-        norm_max: 106800000
+        norm_max: 81500000
 
   B:
-    name: "Downstream Riparian (Country B)"
+    name: "Pakistan (Downstream Riparian)"
     batna: 45.0
     weights:
       upstream_storage_capacity: 0.05
@@ -316,8 +397,8 @@ parties:
       agricultural_income:
         source: b_agricultural_income_musd
         norm_min: 0
-        norm_max: 6864
+        norm_max: 7570
       agricultural_labor:
         source: b_agricultural_labor_persondays
         norm_min: 0
-        norm_max: 897600000
+        norm_max: 832000000

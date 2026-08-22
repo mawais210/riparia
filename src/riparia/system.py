@@ -98,6 +98,10 @@ def _crop_profile(cfg) -> CropProfile:
     )
 
 
+def _crop_profiles(agriculture: AgricultureConfig) -> dict[str, CropProfile]:
+    return {name: _crop_profile(cfg) for name, cfg in agriculture.crops.items()}
+
+
 def _make_floor_fn(mechanism_params: dict, live_storage: float, fill_fraction: float) -> FloorFn:
     """Build the per-step release-floor function for the package's
     `allocation_mechanism` issue level. See docs/METHODOLOGY.md, "The
@@ -208,12 +212,9 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
     )
     upstream_result = simulate(upstream, flow_trace)
 
+    crops = _crop_profiles(config.agriculture)
     a_agri_cfg = config.agriculture.parties["A"]
-    high_crop = _crop_profile(config.agriculture.high_water_crop)
-    low_crop = _crop_profile(config.agriculture.low_water_crop)
-    a_annual_demand = water_requirement_mcm(
-        a_agri_cfg.default_crop_mix_fraction, a_agri_cfg.command_area_1000ha, high_crop, low_crop
-    )
+    a_annual_demand = water_requirement_mcm(a_agri_cfg.crop_areas_1000ha, crops)
     a_demand_target = _demand_target_series(config.a_consumptive_shape, a_annual_demand, upstream_result.release.index)
     a_consumptive_diversion = np.minimum(upstream_result.release, a_demand_target)
     net_release = upstream_result.release - a_consumptive_diversion
@@ -242,9 +243,7 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
         delivered_to_b = inflow_to_b
 
     b_agri_cfg = config.agriculture.parties["B"]
-    b_annual_demand = water_requirement_mcm(
-        b_agri_cfg.default_crop_mix_fraction, b_agri_cfg.command_area_1000ha, high_crop, low_crop
-    )
+    b_annual_demand = water_requirement_mcm(b_agri_cfg.crop_areas_1000ha, crops)
     demand_target = _demand_target_series(config.b_irrigation_shape, b_annual_demand, delivered_to_b.index)
     reliability_ratio = np.minimum(1.0, delivered_to_b / demand_target)
     shortfall_ratio = np.maximum(0.0, (demand_target - delivered_to_b) / demand_target)
@@ -268,17 +267,13 @@ def run_basin(config: BasinConfig, package: Package, flow_trace: pd.Series) -> B
 
     a_ag_outcome = agricultural_outcomes(
         water_available_mcm=float(a_consumptive_diversion.sum() / n_years) if n_years > 0 else 0.0,
-        crop_mix_fraction=a_agri_cfg.default_crop_mix_fraction,
-        command_area_1000ha=a_agri_cfg.command_area_1000ha,
-        high_water_crop=high_crop,
-        low_water_crop=low_crop,
+        areas_1000ha=a_agri_cfg.crop_areas_1000ha,
+        crops=crops,
     )
     b_ag_outcome = agricultural_outcomes(
         water_available_mcm=float(delivered_to_b.sum() / n_years) if n_years > 0 else 0.0,
-        crop_mix_fraction=b_agri_cfg.default_crop_mix_fraction,
-        command_area_1000ha=b_agri_cfg.command_area_1000ha,
-        high_water_crop=high_crop,
-        low_water_crop=low_crop,
+        areas_1000ha=b_agri_cfg.crop_areas_1000ha,
+        crops=crops,
     )
 
     return BasinOutputs(

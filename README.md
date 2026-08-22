@@ -1,3 +1,14 @@
+---
+title: riparia
+emoji: 💧
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: "1.62.0"
+app_file: app/facilitator.py
+pinned: false
+---
+
 # riparia
 
 A two-party transboundary water negotiation exercise: an upstream riparian

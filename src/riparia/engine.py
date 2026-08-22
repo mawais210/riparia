@@ -139,17 +139,27 @@ class Exercise:
         outcomes = run_basin(self.basin_config, package, self.flow_trace)
         return {party: score(vf, package, outcomes) for party, vf in self.value_functions.items()}
 
+    def _check_active(self) -> None:
+        if self.status != ExerciseStatus.IN_PROGRESS:
+            raise ValueError(f"exercise already ended (status={self.status.value}); no further moves are recorded")
+
+    def batnas(self) -> dict[str, float]:
+        return {p: batna(self.value_functions, p) for p in self.value_functions}
+
     def submit_offer(self, party: str, package: Package) -> dict[str, float] | None:
         """Record an offer and, if it covers every issue, score and log its
-        move type. A partial offer (only possible when
-        `require_whole_packages=False`) can't be run through the physical
-        model -- it's recorded but not scored."""
+        move type and whether it clears both parties' BATNAs (in_zopa). A
+        partial offer (only possible when `require_whole_packages=False`)
+        can't be run through the physical model -- it's recorded but not
+        scored."""
+        self._check_active()
         if self.require_whole_packages:
             validate_package(package, self.issues)
 
         is_complete = set(package.selections.keys()) == {issue.name for issue in self.issues}
         scores = self._score_package(package) if is_complete else None
         move_type = classify_move(self._last_offer_scores, scores) if scores is not None else None
+        in_zopa = all(scores[p] >= b for p, b in self.batnas().items()) if scores is not None else None
         if scores is not None:
             self._last_offer_scores = scores
 
@@ -159,12 +169,35 @@ class Exercise:
             self.current_round.phase.value,
             "offer",
             party=party,
-            payload={"selections": package.selections, "scores": scores},
+            payload={"selections": package.selections, "scores": scores, "in_zopa": in_zopa},
             move_type=move_type,
         )
         return scores
 
+    def offer_history(self) -> pd.DataFrame:
+        """Every scored offer logged so far, one row per offer: round
+        number, party, move type, each party's score, and whether the offer
+        cleared both BATNAs. Lets a facilitator see round-over-round
+        whether the parties are converging toward the ZOPA or drifting
+        apart, instead of only finding out at settlement or impasse."""
+        rows = []
+        for event in self.log.events:
+            if event.event_type != "offer" or event.payload.get("scores") is None:
+                continue
+            scores = event.payload["scores"]
+            rows.append(
+                {
+                    "round_number": event.round_number,
+                    "party": event.party,
+                    "move_type": event.move_type,
+                    **{f"score_{p}": s for p, s in scores.items()},
+                    "in_zopa": event.payload.get("in_zopa"),
+                }
+            )
+        return pd.DataFrame(rows)
+
     def submit_criticism(self, party: str, text: str) -> None:
+        self._check_active()
         if not self.single_negotiating_text:
             raise ValueError("submit_criticism requires single_negotiating_text=True")
         self.current_round.criticisms[party] = text
@@ -173,6 +206,7 @@ class Exercise:
         )
 
     def revise_text(self, new_text: Package, facilitator_notes: str = "") -> None:
+        self._check_active()
         if not self.single_negotiating_text:
             raise ValueError("revise_text requires single_negotiating_text=True")
         if self.require_whole_packages:
@@ -185,6 +219,16 @@ class Exercise:
             payload={"selections": new_text.selections, "facilitator_notes": facilitator_notes},
         )
 
+    def declare_impasse(self, reason: str) -> None:
+        """End the exercise without agreement. Distinct from `settle()`:
+        no package is frozen, but the event log (and `offer_history()`)
+        still records everything that was on the table, so a debrief can
+        show what could have worked even though the parties walked away."""
+        self._check_active()
+        self.status = ExerciseStatus.IMPASSE
+        self.new_round(Phase.SETTLEMENT, facilitator_notes=reason)
+        self.log.append(self.current_round.number, Phase.SETTLEMENT.value, "impasse", payload={"reason": reason})
+
     def settle(
         self,
         package: Package,
@@ -194,6 +238,7 @@ class Exercise:
         """Freeze `package` as the agreement, then automatically run frontier
         analysis, PSS search, and (if `ensemble`/`contingent_rule` given) the
         fixed-vs-contingent stress comparison, storing all three."""
+        self._check_active()
         if self.require_whole_packages:
             validate_package(package, self.issues)
 
@@ -204,7 +249,7 @@ class Exercise:
         frontier = pareto_frontier(all_scored)
         loss = efficiency_loss(agreement, frontier)
         pss = post_settlement_search(agreement, all_scored)
-        batnas = {p: batna(self.value_functions, p) for p in self.value_functions}
+        batnas = self.batnas()
         nash_pt = nash_solution(frontier, batnas)
         ks_pt = kalai_smorodinsky(frontier, batnas)
 

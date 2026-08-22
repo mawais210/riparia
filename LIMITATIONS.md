@@ -59,9 +59,8 @@ routing, the negotiation-analytic framework). This file is about what's
   with the water-satisfaction fraction (`min(1, water_available /
   water_required)`). The FAO method this is inspired by (Doorenbos & Kassam
   1979, see `docs/METHODOLOGY.md`) uses a crop-specific yield-response
-  factor `Ky` and is not linear in general; this model sets `Ky = 1`
-  implicitly for every crop and every growth stage, which is a real
-  simplification, not just a rounding choice.
+  factor `Ky` and is not linear in general. This model sets `Ky = 1`
+  implicitly for every crop and every growth stage, a real simplification.
 - **Crop mix is fixed at `default_crop_mix_fraction`** for all package
   scoring, ZOPA, and frontier computation. The facilitator app's crop-mix
   slider is a sensitivity/what-if display layered on top, not a live input

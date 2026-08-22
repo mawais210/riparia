@@ -120,3 +120,52 @@ def test_settle_with_contingent_comparison():
     settlement = ex.settle(package, ensemble=ensemble, contingent_rule=rule)
     assert settlement.contingent_comparison is not None
     assert "fixed" in settlement.contingent_comparison and "contingent" in settlement.contingent_comparison
+
+
+def test_offer_history_tracks_scores_and_zopa_status():
+    ex = _start_exercise()
+    a_opening = Package(selections={**FULL_PACKAGE, "allocation_mechanism": "fixed_low"})
+    b_opening = Package(selections={**FULL_PACKAGE, "allocation_mechanism": "fixed_high"})
+    ex.submit_offer("A", a_opening)
+    ex.submit_offer("B", b_opening)
+    history = ex.offer_history()
+    assert len(history) == 2
+    assert set(history["party"]) == {"A", "B"}
+    assert {"score_A", "score_B", "in_zopa", "move_type", "round_number"} <= set(history.columns)
+    assert history["move_type"].iloc[0] == "initial"
+
+
+def test_offer_history_omits_partial_unscored_offers():
+    cfg = load_config(CONFIG_PATH)
+    ex = Exercise.start(cfg, require_whole_packages=False)
+    ex.submit_offer("A", Package(selections={"upstream_storage_capacity": "medium"}))
+    assert ex.offer_history().empty
+
+
+def test_declare_impasse_ends_exercise_without_settlement():
+    ex = _start_exercise()
+    ex.submit_offer("A", Package(selections=FULL_PACKAGE))
+    ex.declare_impasse("Country B walked away over the release guarantee.")
+    assert ex.status == ExerciseStatus.IMPASSE
+    assert ex.settlement is None
+    impasse_events = [e for e in ex.log.events if e.event_type == "impasse"]
+    assert len(impasse_events) == 1
+    assert impasse_events[0].payload["reason"] == "Country B walked away over the release guarantee."
+
+
+def test_no_further_moves_after_settlement():
+    ex = _start_exercise()
+    ex.settle(Package(selections=FULL_PACKAGE))
+    with pytest.raises(ValueError):
+        ex.submit_offer("A", Package(selections=FULL_PACKAGE))
+    with pytest.raises(ValueError):
+        ex.settle(Package(selections=FULL_PACKAGE))
+
+
+def test_no_further_moves_after_impasse():
+    ex = _start_exercise()
+    ex.declare_impasse("no ZOPA found")
+    with pytest.raises(ValueError):
+        ex.submit_offer("A", Package(selections=FULL_PACKAGE))
+    with pytest.raises(ValueError):
+        ex.declare_impasse("again")

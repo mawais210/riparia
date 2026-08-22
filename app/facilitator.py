@@ -184,18 +184,39 @@ def render_brief(ex: Exercise, names: dict[str, str]) -> None:
         st.markdown(ex.config.factsheet)
 
 
+def _tracked_metric(col, label: str, value: float, fmt, state_key: str, delta_fmt=None) -> None:
+    """st.metric with a delta vs. this same metric's value on the previous
+    rerun (i.e. before your last slider/selection change), scoped to the
+    current scenario so switching scenarios doesn't show a bogus delta."""
+    scenario_path = st.session_state.get("scenario_path", "")
+    key = f"{state_key}__{scenario_path}"
+    prev = st.session_state.get(key)
+    st.session_state[key] = value
+    delta = None
+    if prev is not None and value != prev:
+        d = value - prev
+        delta = (delta_fmt or (lambda x: f"{x:+.2f}"))(d)
+    col.metric(label, fmt(value), delta=delta)
+
+
 def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
     st.subheader("Joint fact-finding: simulate a candidate package")
     package = _package_editor(ex.issues, key_prefix="sim")
 
     st.markdown("#### Climate stress")
-    mean_flow_mult = st.slider("Mean annual flow multiplier", 0.60, 1.10, 1.00, 0.01, key="sim_climate_mean")
+    st.caption("These sliders change the actual river flow, which feeds directly into both parties' scores below.")
+    mean_flow_mult = st.slider("Mean annual flow multiplier", 0.40, 1.10, 1.00, 0.01, key="sim_climate_mean")
     timing_shift = st.slider(
         "Seasonal timing shift, months (negative = earlier snowmelt)", -2.0, 2.0, 0.0, 0.1, key="sim_climate_shift"
     )
     trend = ClimateTrend(name="custom", mean_flow_multiplier=mean_flow_mult, timing_shift_months=timing_shift)
 
-    st.markdown("#### Domestic cropping pattern *(each party's own choice -- not negotiated)*")
+    st.markdown("#### Domestic cropping pattern")
+    st.caption(
+        "Each party's own choice, not negotiated (see docs/METHODOLOGY.md). These sliders change the income/labor "
+        "numbers at the bottom of this page ONLY -- they do not affect either party's negotiation score, since "
+        "no one negotiates the other side's farmers' crop choices in a real treaty either."
+    )
     ag_cfg = ex.config.basin.agriculture
     crops = {name: _crop_profile(cfg) for name, cfg in ag_cfg.crops.items()}
     a_areas = _crop_area_editor(ex, "A", names["A"], key_prefix="sim")
@@ -207,6 +228,41 @@ def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
     trace = pd.Series(list(trended.values) * n_years, index=pd.period_range("2000-01", periods=12 * n_years, freq="M"))
 
     outcomes = run_basin(ex.basin_config, package, trace)
+    scores = {party: score(vf, package, outcomes) for party, vf in ex.value_functions.items()}
+    batnas = ex.batnas()
+
+    st.markdown("#### Negotiation scores")
+    st.caption("What this candidate package, under your chosen climate stress, is actually worth to each party (0-100).")
+    s1, s2 = st.columns(2)
+    _tracked_metric(s1, f"{names['A']} score", scores["A"], lambda v: f"{v:.1f}", "score_a", lambda d: f"{d:+.1f}")
+    _tracked_metric(s2, f"{names['B']} score", scores["B"], lambda v: f"{v:.1f}", "score_b", lambda d: f"{d:+.1f}")
+    below = [names[p] for p in scores if scores[p] < batnas[p]]
+    if below:
+        st.warning(f"Below BATNA (would refuse this deal): {', '.join(below)}")
+    else:
+        st.success("Both parties clear their BATNA with this package under this climate.")
+
+    all_scored = ex.all_scored_packages()
+    fig_scatter, ax_scatter = plt.subplots(figsize=(5, 4))
+    ax_scatter.scatter(
+        [sp.scores["A"] for sp in all_scored], [sp.scores["B"] for sp in all_scored],
+        s=4, alpha=0.1, color="gray", label="all packages (normal climate)",
+    )
+    ax_scatter.axvline(batnas["A"], color="gray", linestyle="--", linewidth=1)
+    ax_scatter.axhline(batnas["B"], color="gray", linestyle="--", linewidth=1)
+    ax_scatter.scatter(
+        [scores["A"]], [scores["B"]], marker="*", s=300, color="crimson", edgecolor="k", zorder=5,
+        label="your current package + climate",
+    )
+    ax_scatter.set_xlabel(f"{names['A']} score")
+    ax_scatter.set_ylabel(f"{names['B']} score")
+    ax_scatter.legend(fontsize=7, loc="best")
+    st.pyplot(fig_scatter)
+    st.caption(
+        "Gray cloud: every feasible package's score under normal climate (the fixed reference landscape). "
+        "Red star: your current package, scored under whatever climate stress you set above -- watch it move "
+        "as you change the sliders."
+    )
 
     a_ag = agricultural_outcomes(float(outcomes.a_consumptive_diversion.sum() / n_years), a_areas, crops)
     b_ag = agricultural_outcomes(float(outcomes.delivered_to_b.sum() / n_years), b_areas, crops)
@@ -221,16 +277,30 @@ def render_simulate(ex: Exercise, names: dict[str, str]) -> None:
 
     st.markdown("#### Outcome indicators")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"{names['B']} irrigation reliability", f"{outcomes.irrigation_reliability_fraction:.0%}")
-    c2.metric(f"{names['B']} shortfall", f"{outcomes.shortfall_fraction:.0%}")
-    c3.metric(f"{names['A']} firm hydropower", f"{_fmt_number(outcomes.firm_hydropower_gwh_per_year)} GWh/yr")
-    c4.metric(f"{names['A']} storage utilization", f"{outcomes.storage_utilization_fraction:.0%}")
+    _tracked_metric(c1, f"{names['B']} irrigation reliability", outcomes.irrigation_reliability_fraction,
+                     lambda v: f"{v:.0%}", "reliability", lambda d: f"{d * 100:+.1f} pp")
+    _tracked_metric(c2, f"{names['B']} shortfall", outcomes.shortfall_fraction,
+                     lambda v: f"{v:.0%}", "shortfall", lambda d: f"{d * 100:+.1f} pp")
+    _tracked_metric(c3, f"{names['A']} firm hydropower", outcomes.firm_hydropower_gwh_per_year,
+                     lambda v: f"{_fmt_number(v)} GWh/yr", "hydropower", lambda d: f"{d:+.0f} GWh/yr")
+    _tracked_metric(c4, f"{names['A']} storage utilization", outcomes.storage_utilization_fraction,
+                     lambda v: f"{v:.0%}", "storage_util", lambda d: f"{d * 100:+.1f} pp")
+
+    def _signed_musd(d: float) -> str:
+        return f"+{_fmt_musd(d)}" if d >= 0 else f"-{_fmt_musd(-d)}"
+
+    def _signed_count(d: float) -> str:
+        return f"+{_fmt_number(d)}" if d >= 0 else f"-{_fmt_number(-d)}"
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric(f"{names['A']} agricultural income", f"{_fmt_musd(a_ag.income_musd)}/yr")
-    c6.metric(f"{names['A']} agricultural labor", f"{_fmt_number(a_ag.labor_persondays)} person-days/yr")
-    c7.metric(f"{names['B']} agricultural income", f"{_fmt_musd(b_ag.income_musd)}/yr")
-    c8.metric(f"{names['B']} agricultural labor", f"{_fmt_number(b_ag.labor_persondays)} person-days/yr")
+    _tracked_metric(c5, f"{names['A']} agricultural income", a_ag.income_musd,
+                     lambda v: f"{_fmt_musd(v)}/yr", "a_ag_income", _signed_musd)
+    _tracked_metric(c6, f"{names['A']} agricultural labor", a_ag.labor_persondays,
+                     lambda v: f"{_fmt_number(v)} person-days/yr", "a_ag_labor", _signed_count)
+    _tracked_metric(c7, f"{names['B']} agricultural income", b_ag.income_musd,
+                     lambda v: f"{_fmt_musd(v)}/yr", "b_ag_income", _signed_musd)
+    _tracked_metric(c8, f"{names['B']} agricultural labor", b_ag.labor_persondays,
+                     lambda v: f"{_fmt_number(v)} person-days/yr", "b_ag_labor", _signed_count)
 
 
 def render_negotiate(ex: Exercise, names: dict[str, str]) -> None:
